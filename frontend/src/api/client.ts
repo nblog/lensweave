@@ -1,0 +1,229 @@
+/**
+ * Backend API client. A thin typed wrapper over fetch against the FastAPI
+ * server (docs/04 §5). Replaced by an OpenAPI-generated client in a later
+ * milestone so the pydantic schemas become the single cross-stack source.
+ */
+
+export const BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8770";
+
+export interface Project {
+  id: number;
+  title: string;
+  created_at: string;
+}
+
+export type AssetKind = "character" | "prop" | "scene";
+
+export interface Asset {
+  id: number;
+  kind: AssetKind;
+  name: string;
+  spec: Record<string, unknown>;
+  image_path: string | null;
+  source_project_id: number | null;
+  created_at: string;
+}
+
+export interface Episode {
+  id: number;
+  project_id: number;
+  episode_no: number;
+  title: string;
+  total_duration_sec: number;
+}
+
+export interface SegmentRow {
+  id: number;
+  episode_id: number;
+  segment_id: number;
+  duration_sec: number;
+  spec: Record<string, unknown>;
+  panel_path: string | null;
+  clip_path: string | null;
+}
+
+export type NodeKind =
+  | "text"
+  | "image"
+  | "video"
+  | "text_gen"
+  | "image_gen"
+  | "video_gen";
+
+export interface CanvasNodeDTO {
+  id: string;
+  kind: NodeKind;
+  name: string;
+  ref_id: number | null;
+  position: [number, number];
+  data: Record<string, unknown>;
+}
+
+export interface CanvasEdgeDTO {
+  id: string;
+  source: string;
+  target: string;
+  order: number;
+}
+
+export interface CanvasGraphDTO {
+  episode_id: number;
+  nodes: CanvasNodeDTO[];
+  edges: CanvasEdgeDTO[];
+}
+
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "canceled";
+
+export type GenerationChannel = "mock" | "routin";
+
+export interface JobResult {
+  text?: string;
+  model?: string | null;
+  image_path?: string | null;
+  image_url?: string | null;
+  size_bytes?: number;
+  response_id?: string | null;
+  video_url?: string | null;
+  clip_path?: string | null;
+  [key: string]: unknown;
+}
+
+export interface Job {
+  id: string;
+  kind: string;
+  status: JobStatus;
+  target_table: string;
+  target_id: number;
+  provider_task_id: string | null;
+  result: JobResult | null;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const DEFAULT_GENERATION_CHANNEL: GenerationChannel =
+  import.meta.env.VITE_GENERATION_CHANNEL === "routin" ? "routin" : "mock";
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const resp = await fetch(`${BASE_URL}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status}${detail ? `: ${detail}` : ""}`);
+  }
+  return (await resp.json()) as T;
+}
+
+export const api = {
+  // projects
+  listProjects: () => request<Project[]>("/api/projects"),
+  createProject: (title: string) =>
+    request<Project>("/api/projects", {
+      method: "POST",
+      body: JSON.stringify({ title }),
+    }),
+
+  // assets (global library, ADR-005)
+  listAssets: (kind?: AssetKind) =>
+    request<Asset[]>(`/api/assets${kind ? `?kind=${kind}` : ""}`),
+  createAsset: (body: {
+    kind: AssetKind;
+    name: string;
+    image_path?: string | null;
+    source_project_id?: number | null;
+  }) =>
+    request<Asset>("/api/assets", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listProjectAssets: (projectId: number) =>
+    request<Asset[]>(`/api/projects/${projectId}/assets`),
+  linkProjectAsset: (projectId: number, assetId: number) =>
+    fetch(`${BASE_URL}/api/projects/${projectId}/assets/${assetId}`, {
+      method: "POST",
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    }),
+  unlinkProjectAsset: (projectId: number, assetId: number) =>
+    fetch(`${BASE_URL}/api/projects/${projectId}/assets/${assetId}`, {
+      method: "DELETE",
+    }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    }),
+
+  // episodes
+  listEpisodes: (projectId: number) =>
+    request<Episode[]>(`/api/projects/${projectId}/episodes`),
+  createEpisode: (
+    projectId: number,
+    body: { episode_no: number; title: string; total_duration_sec: number },
+  ) =>
+    request<Episode>(`/api/projects/${projectId}/episodes`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  // storyboard / segments
+  setStoryboard: (
+    episodeId: number,
+    storyboard: {
+      episode_id: number;
+      title: string;
+      total_duration_sec: number;
+      segments: { segment_id: number; duration_sec: number; visual_prompt: string }[];
+    },
+  ) =>
+    request<SegmentRow[]>(`/api/episodes/${episodeId}/storyboard`, {
+      method: "PUT",
+      body: JSON.stringify(storyboard),
+    }),
+  listSegments: (episodeId: number) =>
+    request<SegmentRow[]>(`/api/episodes/${episodeId}/segments`),
+
+  // canvas
+  getCanvas: (episodeId: number) =>
+    request<CanvasGraphDTO>(`/api/episodes/${episodeId}/canvas`),
+  saveCanvas: (episodeId: number, graph: CanvasGraphDTO) =>
+    request<{ status: string }>(`/api/episodes/${episodeId}/canvas`, {
+      method: "PUT",
+      body: JSON.stringify(graph),
+    }),
+
+  // generation jobs
+  submitText: (
+    episodeId: number,
+    outputNodeId: string,
+    channel: GenerationChannel = DEFAULT_GENERATION_CHANNEL,
+  ) =>
+    request<Job>(`/api/episodes/${episodeId}/text`, {
+      method: "POST",
+      body: JSON.stringify({ output_node_id: outputNodeId, channel }),
+    }),
+  submitImage: (
+    episodeId: number,
+    outputNodeId: string,
+    channel: GenerationChannel = DEFAULT_GENERATION_CHANNEL,
+  ) =>
+    request<Job>(`/api/episodes/${episodeId}/image`, {
+      method: "POST",
+      body: JSON.stringify({ output_node_id: outputNodeId, channel }),
+    }),
+  submitVideo: (
+    segmentId: number,
+    outputNodeId: string,
+    channel: GenerationChannel = DEFAULT_GENERATION_CHANNEL,
+  ) =>
+    request<Job>(`/api/segments/${segmentId}/video`, {
+      method: "POST",
+      body: JSON.stringify({ output_node_id: outputNodeId, channel }),
+    }),
+  getJob: (jobId: string) => request<Job>(`/api/jobs/${jobId}`),
+};

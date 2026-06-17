@@ -1,0 +1,65 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Backend: FastAPI (breakpoints)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "ai_drama.api:app",
+        "--port",
+        "8770"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend/src"
+      },
+      "jinja": true,
+      "justMyCode": false
+    },
+    {
+      "name": "Backend: FastAPI (reload)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "args": [
+        "ai_drama.api:app",
+        "--port",
+        "8770",
+        "--reload"
+      ],
+      "cwd": "${workspaceFolder}/backend",
+      "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}/backend/src"
+      },
+      "subProcess": true,
+      "jinja": true,
+      "justMyCode": false
+    },
+    {
+      "name": "Frontend: Vite",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev -- --port 5173",
+      "cwd": "${workspaceFolder}/frontend",
+      "env": {
+        "VITE_API_BASE_URL": "http://127.0.0.1:8770"
+      }
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full stack: Backend + Frontend + Browser",
+      "configurations": [
+        "Backend: FastAPI (breakpoints)",
+        "Frontend: Vite",
+      ],
+      "stopAll": true
+    }
+  ]
+}

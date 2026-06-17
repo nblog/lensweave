@@ -1,0 +1,32 @@
+family: gpt-image
+display_name: "GPT Image (OpenAI)"
+provider: mulerouter
+routing_prefixes:
+  - gpt-image-
+supported_backends:
+  - routin
+default_backend: routin
+credential_sources:
+  routin:
+    - ROUTIN_API_KEY
+supported_modalities:
+  - t2i
+  - i2i
+models:
+  - id: gpt-image-2
+    display_name: GPT Image 2
+    description: OpenAI GPT-Image-2 (T2I + I2I editing)
+    capabilities: [t2i, i2i]
+    params:
+      prompt:
+        maxLength: 4000
+      size:
+        options: ["1024x1024", "1536x1024", "1024x1536", "2048x2048", "2048x1152", "3840x2160", "2160x3840"]
+        default: "1024x1024"
+      quality:
+        options: ["high", "medium", "low"]
+        default: "high"
+      negativePrompt: false
+      seed: false
+      promptExtend: false
+      watermark: false
