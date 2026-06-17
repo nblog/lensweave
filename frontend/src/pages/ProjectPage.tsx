@@ -67,9 +67,6 @@ export function ProjectPage({ projectId }: { projectId: number }) {
               <span className="project-title">
                 EP{String(e.episode_no).padStart(2, "0")} · {e.title}
               </span>
-              <span className="project-meta">
-                {t("project.duration")}: {e.total_duration_sec}s
-              </span>
             </div>
             <button className="primary" onClick={() => goWorkshop(projectId, e.id)}>
               {t("project.openWorkshop")}

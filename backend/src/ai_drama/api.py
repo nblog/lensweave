@@ -53,7 +53,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 class VideoJobSubmit(BaseModel):
-    """Request to render a segment via its episode's canvas."""
+    """Request to run a VIDEO_GEN node from an episode canvas."""
 
     output_node_id: str
     channel: str = "mock"
@@ -304,6 +304,45 @@ def create_app() -> FastAPI:
         )
         return JobRead.model_validate(job)
 
+    @app.post("/api/episodes/{episode_id}/video", response_model=JobRead, status_code=202)
+    def submit_episode_video(
+        episode_id: int,
+        body: VideoJobSubmit,
+        background: BackgroundTasks,
+        db: Session = Depends(get_db),
+    ):
+        if services.get_episode(db, episode_id) is None:
+            raise HTTPException(404, "episode not found")
+        graph = services.get_canvas(db, episode_id)
+        if graph is None:
+            raise HTTPException(400, "episode has no canvas")
+
+        def image_for_asset(ref_id: int | None) -> str | None:
+            if ref_id is None:
+                return None
+            asset = services.get_asset(db, ref_id)
+            return asset.image_path if asset else None
+
+        try:
+            request = services.compile_video_request(
+                graph,
+                output_node_id=body.output_node_id,
+                resolve_asset_image=image_for_asset,
+            )
+        except services.CompileError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+        job = services.create_video_job(
+            db,
+            target_table="episode",
+            target_id=episode_id,
+            output_node_id=body.output_node_id,
+            request=request,
+            channel=body.channel,
+        )
+        background.add_task(services.run_video_job, job.id)
+        return JobRead.model_validate(job)
+
     @app.post("/api/segments/{segment_id}/video", response_model=JobRead, status_code=202)
     def submit_video(
         segment_id: int,
@@ -334,7 +373,12 @@ def create_app() -> FastAPI:
             raise HTTPException(400, str(exc)) from exc
 
         job = services.create_video_job(
-            db, segment_id=segment_id, request=request, channel=body.channel
+            db,
+            target_table="segment",
+            target_id=segment_id,
+            output_node_id=body.output_node_id,
+            request=request,
+            channel=body.channel,
         )
         background.add_task(services.run_video_job, job.id)
         return JobRead.model_validate(job)

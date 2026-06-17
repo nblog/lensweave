@@ -103,7 +103,6 @@ class Episode(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("project.id"))
     episode_no: Mapped[int]
     title: Mapped[str] = mapped_column(String(200))
-    total_duration_sec: Mapped[int]
     script: Mapped[dict | None] = mapped_column(JSON, default=None)
     storyboard: Mapped[dict | None] = mapped_column(JSON, default=None)
     canvas: Mapped[dict | None] = mapped_column(JSON, default=None)

@@ -1,6 +1,6 @@
 # 05 · 路线图与测试计划
 
-按 [ADR-004](00_overview.md#adr-004-第一个里程碑是骨架端到端)：第一个里程碑是**骨架端到端**——项目/资产/分集 CRUD + 画布 + 单 segment「图文生视频」跑通；8 阶段 agent 先只接 06（分镜）与 08（视频装配），其余留接口桩。先证明全链路打通，再回填 agent 阶段。
+按 [ADR-004](00_overview.md#adr-004-第一个里程碑是骨架端到端)：第一个里程碑是**骨架端到端**——项目/资产/分集 CRUD + 画布 + VideoGen 节点「图文生视频」跑通；8 阶段 agent 先只接 06（分镜）与 08（视频装配），其余留接口桩。先证明全链路打通，再回填 agent 阶段。
 
 测试遵循需求方偏好的**渐进式分级**：`test/01-*` → `test/02-*` → … 从核心价值冒烟，到构建特性验证，再到端到端探索。ordered 测试同时是"人类读懂这套 AI 生成项目的入口"，降低 review 时的信息不对称。
 
@@ -15,8 +15,8 @@
 
 ### M1 · 领域模型 + 持久化
 - 落 [01](01_domain_model.md) 的 pydantic 模型与 SQLAlchemy ORM + Alembic 初始迁移。
-- 重点先行：`StoryboardJSON._check_invariants`（段数下限 + 总时长闭合）、`CanvasGraph._validate_topology`（DAG + 连线合法性）。
-- 验收：pydantic 校验拦住"段数塌缩"的非法分镜；DB 建表迁移成功。
+- 重点先行：`StoryboardJSON._check_invariants`（segment_id 去重）、`CanvasGraph._validate_topology`（DAG + 连线合法性）。
+- 验收：pydantic 校验拦住重复 segment_id 与非法画布拓扑；DB 建表成功。
 
 ### M2 · 适配层（routin 单渠道）
 - 落 [02](02_adapter.md) 三基类 + routin 三实现，复用 PoC 纯函数。
@@ -25,7 +25,7 @@
 ### M3 · 骨架端到端（MVP 核心）
 - 项目/资产/分集 CRUD（CLI + API）。
 - 画布读写 + 编译（`CanvasGraph` → `VideoGenRequest`）。
-- 单 segment 出片：画布拼"人物+场景+剧集内容→视频输出" → 提交 job → 轮询 → 落 `clip_path` → 前端播放。
+- VideoGen 节点试渲：画布拼"人物+场景+剧集内容→视频输出" → 提交 job → 轮询 → job result 落 `clip_path` → 前端播放。
 - 06 分镜 + 08 装配两个 agent 阶段接通；01/02/03/04/05/07 留桩（可手填或返回 mock）。
 - 验收：从前端画布点击出片，端到端拿到一段 MP4。
 
@@ -38,7 +38,7 @@
 | 阶段 | 关注 | 内容 |
 |---|---|---|
 | `test/01_smoke_*` | 核心价值冒烟 | 三个 adapter 各跑一次最小真实调用（标 `@pytest.mark.live`，默认 skip，需 `.env`）；离线则跑 mock adapter |
-| `test/02_models_*` | schema 约束 | StoryboardJSON 段数下限/总时长闭合的正反例；CanvasGraph DAG/连线合法性；枚举受控词表 |
+| `test/02_models_*` | schema 约束 | Segment 默认 15s / 单段上限、StoryboardJSON segment_id 去重；CanvasGraph DAG/连线合法性；枚举受控词表 |
 | `test/03_adapter_*` | 适配层契约 | 请求 schema 互斥规则（视频首尾帧 vs 参考图槽）；PoC 纯函数迁移后的等价性（data URI 编码、role 注入） |
 | `test/04_canvas_*` | 画布编译 | DAG → VideoGenRequest 的有序性（连线 order → 参考图固定顺序 @图1..@图4） |
 | `test/05_job_*` | 异步任务 | job 状态机；提交→轮询→终态；重启恢复（扫 running + provider_task_id 接回轮询） |
@@ -65,8 +65,8 @@
 
 ## 4. 风险与待确认
 
-- **段数 × 成本**：一个 3min EP ≥12 段视频，全量出片的 API 成本与耗时较高。建议 MVP 阶段先支持"单段试渲"与"整集批量"两档，批量默认走 `service_tier=flex`（[videogen.py](../test/videogen.py) 已有该参数，排队更便宜）。
-- **agent 输出稳定性**：06 分镜即使有 schema 校验，LLM 仍可能产出不闭合的分镜。靠 `_check_invariants` 失败 + 就近重跑（pipeline"小步可回放"原则）兜底，必要时在 prompt 里回灌校验错误重试。
+- **段数 × 成本**：未来 06 分镜接入后，一个 3min EP 可能展开为十几段视频，全量出片的 API 成本与耗时较高。建议支持"节点试渲"与"整集批量"两档，批量默认走 `service_tier=flex`（[videogen.py](../test/videogen.py) 已有该参数，排队更便宜）。
+- **agent 输出稳定性**：06 分镜即使有 schema 校验，LLM 仍可能产出重复 segment_id 或不可拍摄的分段。靠 `_check_invariants` 失败 + 就近重跑（pipeline"小步可回放"原则）兜底，必要时在 prompt 里回灌校验错误重试。
 - **首版渠道单一**：routin 网关若不稳定，video 能力可快速接 [videogen-xai.py](../test/videogen-xai.py) 对应的 xAI 实现（基类已留扩展位）。
 
 ## 5. 下一步

@@ -1,10 +1,10 @@
 """End-to-end job test over HTTP with the mock channel (docs/05 §2 test/05_job).
 
 Drives the full vertical through the API: create project → global asset →
-episode → storyboard → canvas, submit a video job, poll until it succeeds, and
-confirm a clip path is recorded on the segment. Runs fully offline via the mock
-channel, so it never touches a real provider or burns tokens. The isolated-DB
-``client`` fixture lives in conftest.
+episode → canvas, submit a video job, poll until it succeeds, and confirm the
+clip path is returned in the job result. Runs fully offline via the mock channel,
+so it never touches a real provider or burns tokens. The isolated-DB ``client``
+fixture lives in conftest.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import time
 
 
-def test_single_segment_render_e2e(client) -> None:
+def test_episode_video_render_e2e_without_segments(client) -> None:
     project = client.post("/api/projects", json={"title": "E2E"}).json()
     pid = project["id"]
 
@@ -31,20 +31,6 @@ def test_single_segment_render_e2e(client) -> None:
     ).json()
     eid = episode["id"]
 
-    segments = client.put(
-        f"/api/episodes/{eid}/storyboard",
-        json={
-            "episode_id": eid,
-            "title": "EP01",
-            "total_duration_sec": 6,
-            "segments": [
-                {"segment_id": 1, "duration_sec": 6, "visual_prompt": "courtyard"}
-            ],
-        },
-    ).json()
-    assert len(segments) == 1
-    seg_id = segments[0]["id"]
-
     canvas = {
         "episode_id": eid,
         "nodes": [
@@ -52,7 +38,6 @@ def test_single_segment_render_e2e(client) -> None:
             {
                 "id": "txt",
                 "kind": "text",
-                "ref_id": seg_id,
                 "data": {"visual_prompt": "courtyard"},
             },
             {"id": "vg", "kind": "video_gen"},
@@ -65,7 +50,7 @@ def test_single_segment_render_e2e(client) -> None:
     assert client.put(f"/api/episodes/{eid}/canvas", json=canvas).status_code == 200
 
     submit = client.post(
-        f"/api/segments/{seg_id}/video",
+        f"/api/episodes/{eid}/video",
         json={"output_node_id": "vg", "channel": "mock"},
     )
     assert submit.status_code == 202
@@ -83,9 +68,8 @@ def test_single_segment_render_e2e(client) -> None:
     assert status == "succeeded", job
     assert job["result"]["clip_path"]
 
-    # Segment should now carry the clip path.
-    seg = client.get(f"/api/episodes/{eid}/segments").json()[0]
-    assert seg["clip_path"]
+    # Episode-level video jobs do not require or create segments.
+    assert client.get(f"/api/episodes/{eid}/segments").json() == []
 
 
 def test_text_and_image_generation_jobs_over_http(client) -> None:

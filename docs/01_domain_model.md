@@ -34,7 +34,7 @@ GenerationJob          独立表，异步任务状态（ADR-003），可挂在�
 
 **资产全局化**（ADR-005）：`Asset` 是顶层实体，不挂在 `Project` 下。项目通过 `ProjectAsset` 关联表多对多引用资产——同一资产可被多个项目共享，删除项目不删资产。`Asset.source_project_id` 可空，用于追溯它最初由哪个项目的 02 CharacterBible/WorldBible 生成；02→04/05 的出图产物发布到全局库并填此字段，而非写入项目私有列表。画布节点的资产节点其 `ref_id` 指向全局 `Asset.id`。
 
-**基数铁律**（来自 [06 §0.2](../test/instructions/06_分集分镜.md)）：`Episode 1:N Segment`，且 `count(Segment) ≥ ceil(total_duration_sec / 15)`。这条约束在 pydantic 用 validator 强制，在 service 层生成分镜时校验。
+**Segment 边界**：`Episode 1:N Segment` 是为未来逐段出片保留的结构关系。当前阶段不要求 `Episode` 预设固定总时长，也不从总时长推导 segment 数量；`Segment.duration_sec` 只表达单段视频的建议长度，默认 15s，并保留 `≤15s` 的单段硬上限。
 
 ## 2. pydantic 层（`src/ai_drama/models/`）
 
@@ -189,7 +189,7 @@ class ScreenAnchor(BaseModel):
 
 class Segment(BaseModel):
     segment_id: int
-    duration_sec: int = Field(le=15, gt=0)   # §0.1 硬约束：≤15s
+    duration_sec: int = Field(default=15, le=15, gt=0)   # §0.1 硬约束：≤15s
     scene_name: str                          # 三段式
     shot_type: ShotType
     camera_movement: CameraMovement
@@ -206,30 +206,18 @@ class Segment(BaseModel):
 class StoryboardJSON(BaseModel):
     episode_id: int
     title: str
-    total_duration_sec: int
     temporary_assets: list[TemporaryAsset] = []
     segments: list[Segment]
 
     @model_validator(mode="after")
     def _check_invariants(self) -> "StoryboardJSON":
-        # §0.2 防塌缩：段数下限
-        import math
-        floor = math.ceil(self.total_duration_sec / 15)
-        if len(self.segments) < floor:
-            raise ValueError(
-                f"segment 数量 {len(self.segments)} < 下限 {floor} "
-                f"(ceil({self.total_duration_sec}/15))，疑似段数塌缩"
-            )
-        # §0.3 总时长闭合
-        total = sum(s.duration_sec for s in self.segments)
-        if total != self.total_duration_sec:
-            raise ValueError(
-                f"Σ duration_sec={total} != total_duration_sec={self.total_duration_sec}"
-            )
+        ids = [s.segment_id for s in self.segments]
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate segment_id within storyboard")
         return self
 ```
 
-> 这个 `_check_invariants` 是把 pipeline 最容易出错的两条铁律（段数塌缩、总时长闭合）从"心里走一遍的自检清单"升级成"代码层强制校验"。06 agent 的输出一进系统就过这道闸，不合格立即失败、就近上游修复。
+> 当前 `_check_invariants` 只维护局部结构一致性，例如同一集内 `segment_id` 不重复。段数规划属于 06 分镜阶段的产出质量问题，不再通过 Episode 固定总时长字段在模型层提前闭合。
 
 ### 2.3 CanvasGraph：通用计算图节点（ADR-001 + ADR-006）
 
@@ -383,7 +371,6 @@ class Episode(Base):
     project_id: Mapped[int] = mapped_column(ForeignKey("project.id"))
     episode_no: Mapped[int]                 # EP01 的 01
     title: Mapped[str]
-    total_duration_sec: Mapped[int]
     script: Mapped[dict | None] = mapped_column(JSON, default=None)       # EpisodeScript
     storyboard: Mapped[dict | None] = mapped_column(JSON, default=None)   # StoryboardJSON
     canvas: Mapped[dict | None] = mapped_column(JSON, default=None)       # CanvasGraph
@@ -430,8 +417,8 @@ class GenerationJob(Base):
 
 | 校验 | 落点 | 例 |
 |---|---|---|
-| 字段类型 / 枚举 | pydantic 字段 | `duration_sec: int = Field(le=15)` |
-| 单实体不变量 | pydantic `model_validator` | 段数下限、总时长闭合、DAG 无环 |
+| 字段类型 / 枚举 | pydantic 字段 | `duration_sec: int = Field(default=15, le=15)` |
+| 单实体不变量 | pydantic `model_validator` | segment_id 去重、DAG 无环 |
 | 跨实体一致性 | service 层 | 资产引用存在、segment 引用的 asset 属于同 project |
 | 持久化约束 | ORM / DB | 外键、唯一约束 |
 

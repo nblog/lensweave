@@ -70,7 +70,7 @@ src/i18n/
 - **自动分集**：调 01→02 产出 EpisodeMap，按"一句话主线"一行一集自动切。
 - **手动分集**：用户自己划定集边界。
 
-两者都落成 `Episode` 列表。手动添加分集的表单只要求填写 `标题`，不在创建 EP 时询问时长；具体生成片段的时长由 EP 工坊里的 `VideoGenNode` 参数控制。后端仍可保留 `Episode.total_duration_sec` 作为分镜闭合校验的模型字段，但它不是创建 EP 的前端输入项。
+两者都落成 `Episode` 列表。手动添加分集的表单只要求填写 `标题`，不在创建 EP 时询问时长；具体生成视频片段的时长由 EP 工坊里的 `VideoGenNode` 参数控制。后端不维护 Episode 固定总时长字段，segment 的数量与切分由后续 06 分镜阶段决定。
 
 ### 2.4 全局资产库（独立入口）
 
@@ -137,7 +137,7 @@ src/i18n/
 
 ### 3.6 触发生成与播放
 
-适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/segments/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点上实时显示 `queued/running/succeeded` 状态与进度，成功后产物落入其下游数据节点（VideoNode 内嵌播放 MP4 / ImageNode 显示图）。
+适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点上实时显示 `queued/running/succeeded` 状态与进度，成功后产物回填到当前生成节点并可内嵌播放。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
 
 ## 4. 状态管理
 

@@ -92,12 +92,11 @@ def seed_demo(
         episode = services.create_episode(
             db,
             project.id,
-            EpisodeCreate(episode_no=1, title="EP01", total_duration_sec=6),
+            EpisodeCreate(episode_no=1, title="EP01"),
         )
         storyboard = StoryboardJSON(
             episode_id=episode.id,
             title="EP01",
-            total_duration_sec=6,
             segments=[
                 Segment(
                     segment_id=1,
@@ -149,7 +148,12 @@ def seed_demo(
             resolve_asset_image=image_for_asset,
         )
         job = services.create_video_job(
-            db, segment_id=segment.id, request=request, channel=channel
+            db,
+            target_table="segment",
+            target_id=segment.id,
+            output_node_id="vg",
+            request=request,
+            channel=channel,
         )
         typer.echo(f"Submitted job {job.id} (channel={channel}) ...")
 

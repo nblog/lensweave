@@ -5,12 +5,12 @@
  * a value; adapter nodes (text/image/video gen) run a generation. Connection
  * legality is enforced client-side by port-type compatibility (the first
  * guardrail; the backend schema is the final one). Input order at an adapter
- * node = context order. "Render video" on a video_gen node submits the bound
- * segment, polls the job, and plays the clip on that node.
+ * node = context order. "Render video" on a video_gen node submits the episode
+ * canvas node, polls the job, and plays the clip on that node.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ReactFlow,
   Background,
@@ -132,7 +132,6 @@ export function CanvasWorkshop({
 }) {
   void projectId;
   const { t } = useTranslation();
-  const qc = useQueryClient();
   const confirm = useConfirm();
 
   const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.listAssets() });
@@ -218,23 +217,6 @@ export function CanvasWorkshop({
     },
     [confirm, t],
   );
-
-  const seedStoryboard = async () => {
-    await api.setStoryboard(episodeId, {
-      episode_id: episodeId,
-      title: `EP${episodeId}`,
-      total_duration_sec: 6,
-      segments: [
-        {
-          segment_id: 1,
-          duration_sec: 6,
-          visual_prompt:
-            "极慢推进，中景到近景；女主立于前院大门内侧，指尖捏紧衣角，瞳孔骤缩——画面无字幕。",
-        },
-      ],
-    });
-    void qc.invalidateQueries({ queryKey: ["segments", episodeId] });
-  };
 
   const onConnect = useCallback(
     (conn: Connection) => {
@@ -408,14 +390,6 @@ export function CanvasWorkshop({
 
   const handleRenderVideo = useCallback(
     async (nodeId: string) => {
-      const segmentId = findVideoTargetSegmentId(
-        nodeId,
-        nodes,
-        edges,
-        segments.data ?? [],
-      );
-      if (segmentId == null) return;
-
       await api.saveCanvas(
         episodeId,
         flowToDto(episodeId, nodes, edges, videoSettings.data),
@@ -436,11 +410,7 @@ export function CanvasWorkshop({
         jobError: null,
       });
       try {
-        const submitted = await api.submitVideo(
-          segmentId,
-          nodeId,
-          generationChannel,
-        );
+        const submitted = await api.submitVideo(episodeId, nodeId, generationChannel);
         let current = submitted;
         latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current));
         setNodes(latestNodes);
@@ -470,7 +440,6 @@ export function CanvasWorkshop({
       episodeId,
       generationChannel,
       nodes,
-      segments.data,
       setNodes,
       videoSettings.data,
     ],
@@ -478,18 +447,8 @@ export function CanvasWorkshop({
 
   // Ordered inputs of the selected adapter node (for the inspector list).
   const orderedInputs = selected ? orderedInputsByNodeId[selected.id] ?? [] : [];
-  const selectedVideoSegmentId =
-    selected?.data.kind === "video_gen"
-      ? findVideoTargetSegmentId(
-          selected.id,
-          nodes,
-          edges,
-          segments.data ?? [],
-        )
-      : null;
   const selectedVideoCanRender =
     selected?.data.kind === "video_gen" &&
-    selectedVideoSegmentId != null &&
     hasVideoPromptInput(selected.id, nodes, edges);
   const selectedImagePreview =
     selected &&
@@ -509,12 +468,6 @@ export function CanvasWorkshop({
           isRendering: renderingNodeId === n.id,
           canRenderVideo:
             n.data.kind === "video_gen" &&
-            findVideoTargetSegmentId(
-              n.id,
-              nodes,
-              edges,
-              segments.data ?? [],
-            ) != null &&
             hasVideoPromptInput(n.id, nodes, edges),
           onPatchNode: patchNode,
           onUploadImage: handleUploadImage,
@@ -580,9 +533,6 @@ export function CanvasWorkshop({
           <ImageIcon size={15} aria-hidden />
           {t("canvas.nodeImage")}
         </button>
-        {segments.data && segments.data.length === 0 && (
-          <button onClick={seedStoryboard}>{t("canvas.seedStoryboard")}</button>
-        )}
         <div className="palette-spacer" />
         <button className="primary" onClick={handleSave}>
           <Save size={15} aria-hidden />
@@ -757,26 +707,6 @@ export function CanvasWorkshop({
           {selected?.data.kind === "video_gen" && (
             <>
               <hr />
-              {segments.data && segments.data.length > 1 && (
-                <div className="content-editor">
-                  <label>{t("canvas.targetSegment")}</label>
-                  <select
-                    value={selected.data.refId ?? ""}
-                    onChange={(e) =>
-                      updateNode(setNodes, selected.id, {
-                        refId: e.target.value ? Number(e.target.value) : null,
-                      })
-                    }
-                  >
-                    <option value="">{t("canvas.autoTargetSegment")}</option>
-                    {segments.data.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        #{s.segment_id} ({s.duration_sec}s)
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              )}
               <div className="content-editor video-gen-settings">
                 <label htmlFor={`video-duration-${selected.id}`}>
                   {t("canvas.videoDuration")}
@@ -1365,60 +1295,6 @@ function buildOrderedInputsByNodeId(
       }));
     return acc;
   }, {});
-}
-
-function findBoundSegmentId(
-  nodeId: string,
-  nodes: CanvasNode[],
-  edges: Edge[],
-): number | null {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  const visited = new Set<string>();
-
-  const visit = (currentId: string): number | null => {
-    if (visited.has(currentId)) return null;
-    visited.add(currentId);
-
-    const incoming = edges
-      .filter((e) => e.target === currentId)
-      .sort(
-        (a, b) =>
-          ((a.data as { order?: number })?.order ?? 0) -
-          ((b.data as { order?: number })?.order ?? 0),
-      );
-
-    for (const edge of incoming) {
-      const source = byId.get(edge.source);
-      if (!source) continue;
-      if (source.data.kind === "text" && source.data.refId != null) {
-        return source.data.refId;
-      }
-      const upstream = visit(source.id);
-      if (upstream != null) return upstream;
-    }
-    return null;
-  };
-
-  return visit(nodeId);
-}
-
-function findVideoTargetSegmentId(
-  nodeId: string,
-  nodes: CanvasNode[],
-  edges: Edge[],
-  segments: SegmentRow[],
-): number | null {
-  const node = nodes.find((n) => n.id === nodeId);
-  if (node?.data.kind === "video_gen" && node.data.refId != null) {
-    return node.data.refId;
-  }
-
-  const upstreamSegmentId = findBoundSegmentId(nodeId, nodes, edges);
-  if (upstreamSegmentId != null) {
-    return upstreamSegmentId;
-  }
-
-  return segments.length === 1 ? segments[0].id : null;
 }
 
 function hasVideoPromptInput(

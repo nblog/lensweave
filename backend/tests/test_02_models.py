@@ -1,9 +1,9 @@
 """Schema-constraint tests (docs/05 §2 test/02_models).
 
-Locks the storyboard anti-collapse invariants and the canvas topology guardrails
-that the rest of the system relies on. These are the rules most prone to silent
-failure (segment collapse, illegal graphs), so they are validated directly at
-the pydantic layer.
+Locks the storyboard segment-local invariants and the canvas topology guardrails
+that the rest of the system relies on. Episode total duration is intentionally
+not part of the current model; segment duration remains a per-fragment default
+and cap.
 """
 
 from __future__ import annotations
@@ -21,39 +21,35 @@ from ai_drama.models import (
 )
 
 
-def _seg(sid: int, dur: int) -> Segment:
-    return Segment(segment_id=sid, duration_sec=dur, visual_prompt=f"shot {sid}")
+def _seg(sid: int, dur: int | None = None) -> Segment:
+    kwargs = {"segment_id": sid, "visual_prompt": f"shot {sid}"}
+    if dur is not None:
+        kwargs["duration_sec"] = dur
+    return Segment(**kwargs)
 
 
-def test_storyboard_accepts_closed_floor():
-    # 30s ⇒ floor ceil(30/15)=2; two 15s segments close exactly.
+def test_segment_defaults_to_15_seconds():
+    seg = Segment(segment_id=1, visual_prompt="default duration")
+
+    assert seg.duration_sec == 15
+
+
+def test_storyboard_accepts_segments_without_episode_duration():
     sb = StoryboardJSON(
         episode_id=1,
         title="EP",
-        total_duration_sec=30,
-        segments=[_seg(1, 15), _seg(2, 15)],
+        segments=[_seg(1), _seg(2, 10)],
     )
+
     assert len(sb.segments) == 2
 
 
-def test_storyboard_rejects_segment_collapse():
-    # 180s collapsed into one segment must fail the floor check.
-    with pytest.raises(ValidationError, match="segment collapse"):
+def test_storyboard_rejects_duplicate_segment_ids():
+    with pytest.raises(ValidationError, match="duplicate segment_id"):
         StoryboardJSON(
             episode_id=1,
             title="EP",
-            total_duration_sec=180,
-            segments=[_seg(1, 15)],
-        )
-
-
-def test_storyboard_rejects_unclosed_total():
-    with pytest.raises(ValidationError, match="!= total_duration_sec"):
-        StoryboardJSON(
-            episode_id=1,
-            title="EP",
-            total_duration_sec=30,
-            segments=[_seg(1, 10), _seg(2, 15)],
+            segments=[_seg(1), _seg(1)],
         )
 
 

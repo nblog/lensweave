@@ -10,7 +10,6 @@ class EpisodeCreate(BaseModel):
 
     episode_no: int = Field(ge=1)
     title: str = Field(min_length=1, max_length=200)
-    total_duration_sec: int = Field(gt=0, default=180)
 
 
 class EpisodeRead(BaseModel):
@@ -22,4 +21,3 @@ class EpisodeRead(BaseModel):
     project_id: int
     episode_no: int
     title: str
-    total_duration_sec: int

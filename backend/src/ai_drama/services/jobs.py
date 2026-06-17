@@ -2,10 +2,10 @@
 
 Implements the lightweight task model of ADR-003: submit to the adapter, persist
 job state in the DB, then run a poll loop (as a FastAPI BackgroundTask or a CLI
-foreground loop) that drives the job to a terminal state and, on success,
-downloads the clip and records its path on the target segment. ``provider_task_id``
-is persisted so an interrupted loop can be resumed without losing the task
-(docs/03 §4.3).
+foreground loop) that drives the job to a terminal state. Video jobs may target
+an episode canvas node directly, or a segment when the segmented 06/08 pipeline
+is active. ``provider_task_id`` is persisted so an interrupted loop can be
+resumed without losing the task (docs/03 §4.3).
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import asyncio
 import logging
 import uuid
 from pathlib import Path
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -25,7 +26,7 @@ from ai_drama.adapters.registry import (
     get_video_adapter,
 )
 from ai_drama.config import GENERATED_CLIPS_DIR, GENERATED_IMAGES_DIR
-from ai_drama.db import GenerationJob, Segment, SessionLocal
+from ai_drama.db import Episode, GenerationJob, Segment, SessionLocal
 from ai_drama.models import JobStatus
 
 # Where downloaded clips land. Mirrors the project ``outputs/`` convention.
@@ -59,19 +60,31 @@ def _create_job(
 def create_video_job(
     db: Session,
     *,
-    segment_id: int,
+    target_table: Literal["episode", "segment"],
+    target_id: int,
+    output_node_id: str,
     request: VideoGenRequest,
     channel: str = "mock",
 ) -> GenerationJob:
-    """Create a queued video job targeting a segment. Does not start polling."""
-    if db.get(Segment, segment_id) is None:
-        raise LookupError(f"segment {segment_id} not found")
+    """Create a queued video job targeting an episode node or segment."""
+    if target_table == "episode":
+        if db.get(Episode, target_id) is None:
+            raise LookupError(f"episode {target_id} not found")
+    elif target_table == "segment":
+        if db.get(Segment, target_id) is None:
+            raise LookupError(f"segment {target_id} not found")
+    else:  # pragma: no cover - narrowed by typing, retained for service callers.
+        raise ValueError(f"unsupported video target table {target_table!r}")
     return _create_job(
         db,
         kind="video",
-        target_table="segment",
-        target_id=segment_id,
-        request={"channel": channel, **request.model_dump(mode="json")},
+        target_table=target_table,
+        target_id=target_id,
+        request={
+            "channel": channel,
+            "output_node_id": output_node_id,
+            **request.model_dump(mode="json"),
+        },
     )
 
 
@@ -167,8 +180,9 @@ async def run_video_job(job_id: str, *, interval: float = 2.0) -> None:
     """Drive a video job to terminal state. Safe to run as a BackgroundTask.
 
     Uses its own session so it is independent of any request-scoped session.
-    Reuses the channel and request captured at creation time; on success
-    downloads the clip and writes ``clip_path`` onto the target segment.
+    Reuses the channel and request captured at creation time. Segment-targeted
+    jobs also write ``clip_path`` back onto that segment; episode-targeted jobs
+    keep the clip path in ``GenerationJob.result`` for the canvas node to store.
     """
     with SessionLocal() as db:
         job = db.get(GenerationJob, job_id)
@@ -221,7 +235,7 @@ async def _poll_until_done(db, job, adapter, *, interval: float) -> None:
         if poll.status == "succeeded":
             clip_path = None
             if poll.video_url:
-                out = CLIPS_DIR / f"{job.target_id}_{job.id}.mp4"
+                out = CLIPS_DIR / f"{job.target_table}_{job.target_id}_{job.id}.mp4"
                 try:
                     saved = await adapter.download(poll.video_url, out)
                     clip_path = str(saved)
@@ -247,7 +261,7 @@ async def _poll_until_done(db, job, adapter, *, interval: float) -> None:
 def _on_success(db, job, *, clip_path: str | None, video_url: str | None) -> None:
     job.status = JobStatus.SUCCEEDED.value
     job.result = {"video_url": video_url, "clip_path": clip_path}
-    if clip_path is not None:
+    if clip_path is not None and job.target_table == "segment":
         segment = db.get(Segment, job.target_id)
         if segment is not None:
             segment.clip_path = clip_path

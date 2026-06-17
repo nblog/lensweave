@@ -28,11 +28,11 @@ ai-drama plan run         --project 1                            # 02 剧集策�
 ai-drama asset gen        --project 1 --kind character --name 林沅 # 04/05 资产出图
 ai-drama script run       --project 1 --ep 1                      # 03 单集剧本
 ai-drama storyboard run   --project 1 --ep 1                      # 06 分集分镜
-ai-drama video submit     --segment 12                            # 08 提交视频任务
+ai-drama video submit     --episode 1 --node vg                   # 08 提交视频任务
 ai-drama job poll         --job <job_id>                          # 恢复轮询（对齐 videogen.py poll）
 ```
 
-> 设计取向：CLI 命令与 pipeline 阶段一一对应，让"渐进式验证"成为可能——可以只跑 `storyboard run` 验证 06 的段数闭合，不必跑完整链路。这正是把 [test/](../test/) 里 PEP 723 脚本的"单脚本单能力"理念延续到工程版。
+> 设计取向：CLI 命令与 pipeline 阶段一一对应，让"渐进式验证"成为可能——可以只跑 `storyboard run` 验证 06 的结构输出，不必跑完整链路。这正是把 [test/](../test/) 里 PEP 723 脚本的"单脚本单能力"理念延续到工程版。
 
 ## 3. FastAPI 接口（`src/ai_drama/api/`）
 
@@ -77,6 +77,7 @@ GET    /api/episodes/{id}/segments        segment 列表
 GET    /api/episodes/{id}/canvas          读取 CanvasGraph
 PUT    /api/episodes/{id}/canvas          保存 CanvasGraph（前端画布持久化）
 POST   /api/episodes/{id}/canvas/compile  编译画布 → VideoGenRequest 预览（不提交）
+POST   /api/episodes/{id}/video           提交 VideoGen 节点视频生成 → job_id
 
 GET    /api/model-catalog/seedance/video-settings
                                           读取 VideoGenNode 时长/分辨率控件配置
@@ -89,7 +90,8 @@ GET    /api/model-catalog/seedance/video-settings
 ### 3.4 生成任务（异步核心）
 
 ```
-POST   /api/segments/{id}/video           提交 08 视频生成 → 返回 job_id（立即返回，202）
+POST   /api/episodes/{id}/video           提交 VideoGen 节点视频生成 → 返回 job_id（立即返回，202）
+POST   /api/segments/{id}/video           提交 segment 定向视频生成 → 返回 job_id（立即返回，202）
 GET    /api/jobs/{job_id}                 查询 job 状态（前端轮询）
 GET    /api/jobs/{job_id}/events          SSE 流（可选，状态变更推送）
 POST   /api/jobs/{job_id}/resume          恢复轮询（服务端任务仍在跑时）
@@ -113,7 +115,7 @@ queued ──► running ──► succeeded
 
 ```
 前端                     FastAPI                    BackgroundTask           routin VideoAdapter
- │  POST /segments/12/video  │                          │                          │
+ │  POST /episodes/1/video   │                          │                          │
  ├──────────────────────────►│  建 GenerationJob(queued) │                          │
  │                           ├─ 入库, 起 BackgroundTask ─►│                          │
  │◄── 202 {job_id} ──────────┤                          │  adapter.submit(req) ────►│
@@ -121,7 +123,7 @@ queued ──► running ──► succeeded
  │                           │                   存 provider_task_id, status=running │
  │  GET /jobs/{id} (轮询)     │                          │  循环 adapter.poll(...) ──►│
  ├──────────────────────────►│                          │◄── status/video_url ─────┤
- │◄── {status: running} ─────┤                   终态: 下载 MP4, 落 clip_path        │
+│◄── {status: running} ─────┤                   终态: 下载 MP4, 写 job.result.clip_path │
  │  ...                       │                   status=succeeded, result 入库       │
  │  GET /jobs/{id}            │                          │                          │
  │◄── {status: succeeded,    │                          │                          │

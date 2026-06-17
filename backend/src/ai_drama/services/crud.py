@@ -132,7 +132,6 @@ def create_episode(db: Session, project_id: int, data: EpisodeCreate) -> Episode
         project_id=project_id,
         episode_no=data.episode_no,
         title=data.title,
-        total_duration_sec=data.total_duration_sec,
     )
     db.add(episode)
     db.commit()
@@ -159,10 +158,11 @@ def get_episode(db: Session, episode_id: int) -> Episode | None:
 def set_storyboard(db: Session, episode_id: int, storyboard: StoryboardJSON) -> Episode:
     """Persist a validated storyboard and materialize its segments.
 
-    The pydantic ``StoryboardJSON`` has already enforced the segment-count floor
-    and duration closure (models/storyboard.py); here we store the document and
-    fan out one Segment row per shot so each can be referenced by a canvas node
-    and carry its own clip path.
+    The pydantic ``StoryboardJSON`` owns only per-storyboard invariants here;
+    episode total duration is intentionally not modeled at this slice. We store
+    the document and fan out one Segment row per shot so each can be referenced
+    by a canvas node and carry its own clip path when the segmented pipeline is
+    active.
     """
     episode = db.get(Episode, episode_id)
     if episode is None:

@@ -1,20 +1,17 @@
 """Segment & storyboard pydantic schemas — the structured shot language.
 
-This is the strictest contract in the system (docs/01 §2.2, sourced from
-test/instructions/06). A ``Segment`` is the 15-second shot fragment that is the
-pipeline's minimal unit; ``StoryboardJSON`` is the per-episode collection whose
-validators enforce the two rules most prone to failure: the anti-collapse
-segment-count floor and total-duration closure.
+A ``Segment`` is the future 15-second-ish video fragment inside an episode. The
+current slice keeps that concept because the 06/08 pipeline will eventually
+generate and render many segments per episode, but an ``Episode`` no longer owns
+a fixed total duration. ``StoryboardJSON`` therefore validates local storyboard
+shape only, not episode-duration closure.
 
 The rich anchor fields (spatial_anchor / screen_anchor / transition) are modeled
-as optional free-form dicts at this slice so a hand-authored demo segment needs
-only ``visual_prompt`` + ``duration_sec``. They tighten into dedicated submodels
+as optional free-form dicts at this slice. They tighten into dedicated submodels
 (docs/01 §2.2) when the 06/07 agents come online.
 """
 
 from __future__ import annotations
-
-import math
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -33,7 +30,7 @@ class Segment(BaseModel):
     """A ≤15s shot fragment (test/instructions/06 §2)."""
 
     segment_id: int
-    duration_sec: int = Field(gt=0, le=15)  # §0.1 hard cap
+    duration_sec: int = Field(default=15, gt=0, le=15)  # §0.1 hard cap
     visual_prompt: str
     scene_name: str = ""
     shot_type: str = ""
@@ -48,29 +45,14 @@ class Segment(BaseModel):
 
 
 class StoryboardJSON(BaseModel):
-    """Per-episode storyboard. Enforces the anti-collapse invariants."""
+    """Per-episode storyboard. Keeps segment identity stable within the episode."""
 
     episode_id: int
     title: str
-    total_duration_sec: int = Field(gt=0)
     segments: list[Segment]
 
     @model_validator(mode="after")
     def _check_invariants(self) -> "StoryboardJSON":
-        # §0.2 anti-collapse: segment-count floor = ceil(total / 15).
-        floor = math.ceil(self.total_duration_sec / 15)
-        if len(self.segments) < floor:
-            raise ValueError(
-                f"segment count {len(self.segments)} < floor {floor} "
-                f"(ceil({self.total_duration_sec}/15)); likely segment collapse"
-            )
-        # §0.3 total-duration closure.
-        total = sum(s.duration_sec for s in self.segments)
-        if total != self.total_duration_sec:
-            raise ValueError(
-                f"sum(duration_sec)={total} != total_duration_sec="
-                f"{self.total_duration_sec}"
-            )
         # Segment ids must be unique within the episode.
         ids = [s.segment_id for s in self.segments]
         if len(set(ids)) != len(ids):

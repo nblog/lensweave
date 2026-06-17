@@ -31,7 +31,6 @@ export interface Episode {
   project_id: number;
   episode_no: number;
   title: string;
-  total_duration_sec: number;
 }
 
 export interface SegmentRow {
@@ -191,7 +190,7 @@ export const api = {
     request<Episode[]>(`/api/projects/${projectId}/episodes`),
   createEpisode: (
     projectId: number,
-    body: { episode_no: number; title: string; total_duration_sec?: number },
+    body: { episode_no: number; title: string },
   ) =>
     request<Episode>(`/api/projects/${projectId}/episodes`, {
       method: "POST",
@@ -204,8 +203,7 @@ export const api = {
     storyboard: {
       episode_id: number;
       title: string;
-      total_duration_sec: number;
-      segments: { segment_id: number; duration_sec: number; visual_prompt: string }[];
+      segments: { segment_id: number; duration_sec?: number; visual_prompt: string }[];
     },
   ) =>
     request<SegmentRow[]>(`/api/episodes/${episodeId}/storyboard`, {
@@ -244,11 +242,11 @@ export const api = {
       body: JSON.stringify({ output_node_id: outputNodeId, channel }),
     }),
   submitVideo: (
-    segmentId: number,
+    episodeId: number,
     outputNodeId: string,
     channel: GenerationChannel = DEFAULT_GENERATION_CHANNEL,
   ) =>
-    request<Job>(`/api/segments/${segmentId}/video`, {
+    request<Job>(`/api/episodes/${episodeId}/video`, {
       method: "POST",
       body: JSON.stringify({ output_node_id: outputNodeId, channel }),
     }),
