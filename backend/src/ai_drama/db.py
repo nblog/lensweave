@@ -81,6 +81,7 @@ class Asset(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(default=None)
     spec: Mapped[dict] = mapped_column(JSON, default=dict)
     image_path: Mapped[str | None] = mapped_column(default=None)
     source_project_id: Mapped[int | None] = mapped_column(

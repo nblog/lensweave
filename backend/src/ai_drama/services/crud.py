@@ -52,6 +52,7 @@ def create_asset(db: Session, data: AssetCreate) -> Asset:
     asset = Asset(
         kind=data.kind.value,
         name=data.name,
+        description=data.description,
         spec=data.spec,
         image_path=data.image_path,
         source_project_id=data.source_project_id,
@@ -72,6 +73,21 @@ def list_assets(db: Session, *, kind: str | None = None) -> list[Asset]:
 
 def get_asset(db: Session, asset_id: int) -> Asset | None:
     return db.get(Asset, asset_id)
+
+
+def delete_asset(db: Session, asset_id: int) -> None:
+    """Delete a global asset, removing any project references first.
+
+    Assets are global (ADR-005) and may be referenced by multiple projects via
+    the ``project_asset`` association; clearing the relationship keeps those
+    association rows from dangling before the asset row is removed.
+    """
+    asset = db.get(Asset, asset_id)
+    if asset is None:
+        raise LookupError(f"asset {asset_id} not found")
+    asset.projects.clear()
+    db.delete(asset)
+    db.commit()
 
 
 def list_project_assets(db: Session, project_id: int) -> list[Asset]:

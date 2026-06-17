@@ -138,6 +138,13 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "asset not found")
         return AssetRead.model_validate(asset)
 
+    @app.delete("/api/assets/{asset_id}", status_code=204)
+    def delete_asset(asset_id: int, db: Session = Depends(get_db)):
+        try:
+            services.delete_asset(db, asset_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
     @app.get("/api/projects/{project_id}/assets", response_model=list[AssetRead])
     def list_project_assets(project_id: int, db: Session = Depends(get_db)):
         try:

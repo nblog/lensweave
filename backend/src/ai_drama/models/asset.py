@@ -21,6 +21,7 @@ class AssetCreate(BaseModel):
 
     kind: AssetKind
     name: str = Field(min_length=1, max_length=200)
+    description: str | None = None
     spec: dict = Field(default_factory=dict)
     image_path: str | None = None
     source_project_id: int | None = None
@@ -34,6 +35,7 @@ class AssetRead(BaseModel):
     id: int
     kind: AssetKind
     name: str
+    description: str | None
     spec: dict
     image_path: str | None
     source_project_id: int | None

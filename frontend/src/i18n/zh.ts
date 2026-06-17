@@ -3,7 +3,7 @@ const zh = {
   app: {
     title: "AI 短剧工坊",
     subtitle: "AI 短剧 / 漫剧生产平台",
-    back: "← 返回",
+    back: "返回",
   },
   nav: {
     projects: "项目",
@@ -30,15 +30,23 @@ const zh = {
   assets: {
     heading: "全局资产库",
     intro: "资产是全局的，可在多个项目间复用。",
-    add: "添加资产",
-    name: "资产名称",
+    add: "保存资产",
+    name: "名称",
+    namePlaceholder: "例如：女主·林夏",
+    description: "描述（可选）",
+    descriptionPlaceholder: "补充该资产的视觉特征、用途等。",
     kind: "类型",
-    imagePath: "参考图路径 / URL（可选）",
+    tag: "标签",
+    uploadImage: "上传图像",
+    replaceImage: "更换图像",
+    noImage: "暂无图像",
     kindCharacter: "人物",
     kindProp: "道具",
     kindScene: "场景",
     empty: "还没有资产。",
     source: "来源项目",
+    deleteTitle: "删除资产",
+    deleteMessage: "确定删除资产「{{name}}」吗？此操作不可撤销。",
   },
   project: {
     episodes: "分集",
@@ -99,6 +107,16 @@ const zh = {
     retry: "重试",
     generationApiPending: "生成接口尚未接入",
     needVideoGen: "需要文本输入，并选择目标 segment；本集只有一个 segment 时会自动使用。",
+  },
+  confirm: {
+    confirm: "确定",
+    cancel: "取消",
+    delete: "删除",
+    replace: "更换",
+    deleteNodeTitle: "删除节点",
+    deleteNodeMessage: "确定删除选中的节点吗？与之相连的连线也会一并移除。",
+    replaceImageTitle: "更换图像",
+    replaceImageMessage: "已有图像，确定用新选择的图像覆盖吗？",
   },
 } as const;
 

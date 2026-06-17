@@ -6,8 +6,10 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Clock } from "lucide-react";
 import { api } from "../api/client";
 import { useNav } from "../store/nav";
+import { formatTimestamp } from "../utils/datetime";
 
 export function ProjectsPage() {
   const { t } = useTranslation();
@@ -78,8 +80,8 @@ export function ProjectsPage() {
               <div>
                 <span className="project-title">{p.title}</span>
                 <span className="project-meta">
-                  {t("projects.createdAt")}:{" "}
-                  {new Date(p.created_at).toLocaleString()}
+                  <Clock size={13} aria-hidden />
+                  {t("projects.createdAt")}: {formatTimestamp(p.created_at)}
                 </span>
               </div>
               <button className="primary" onClick={() => goProject(p.id)}>

@@ -3,7 +3,7 @@ const en = {
   app: {
     title: "AI Drama Flow",
     subtitle: "AI short-drama / comic-drama production platform",
-    back: "← Back",
+    back: "Back",
   },
   nav: {
     projects: "Projects",
@@ -30,15 +30,23 @@ const en = {
   assets: {
     heading: "Global Asset Library",
     intro: "Assets are global and reusable across projects.",
-    add: "Add asset",
-    name: "Asset name",
+    add: "Save asset",
+    name: "Name",
+    namePlaceholder: "e.g. Lead · Lin Xia",
+    description: "Description (optional)",
+    descriptionPlaceholder: "Add visual traits, usage notes, etc.",
     kind: "Kind",
-    imagePath: "Reference image path / URL (optional)",
+    tag: "Tag",
+    uploadImage: "Upload image",
+    replaceImage: "Replace image",
+    noImage: "No image",
     kindCharacter: "Character",
     kindProp: "Prop",
     kindScene: "Scene",
     empty: "No assets yet.",
     source: "Source project",
+    deleteTitle: "Delete asset",
+    deleteMessage: 'Delete asset "{{name}}"? This cannot be undone.',
   },
   project: {
     episodes: "Episodes",
@@ -99,6 +107,18 @@ const en = {
     retry: "Retry",
     generationApiPending: "Generation API is not wired yet",
     needVideoGen: "Requires a text input and a target segment; single-segment episodes are selected automatically.",
+  },
+  confirm: {
+    confirm: "Confirm",
+    cancel: "Cancel",
+    delete: "Delete",
+    replace: "Replace",
+    deleteNodeTitle: "Delete node",
+    deleteNodeMessage:
+      "Delete the selected node? Its connected edges are removed too.",
+    replaceImageTitle: "Replace image",
+    replaceImageMessage:
+      "An image is already set. Overwrite it with the newly selected one?",
   },
 } as const;
 

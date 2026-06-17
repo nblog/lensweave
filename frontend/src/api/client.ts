@@ -19,6 +19,7 @@ export interface Asset {
   id: number;
   kind: AssetKind;
   name: string;
+  description: string | null;
   spec: Record<string, unknown>;
   image_path: string | null;
   source_project_id: number | null;
@@ -158,12 +159,17 @@ export const api = {
   createAsset: (body: {
     kind: AssetKind;
     name: string;
+    description?: string | null;
     image_path?: string | null;
     source_project_id?: number | null;
   }) =>
     request<Asset>("/api/assets", {
       method: "POST",
       body: JSON.stringify(body),
+    }),
+  deleteAsset: (assetId: number) =>
+    fetch(`${BASE_URL}/api/assets/${assetId}`, { method: "DELETE" }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
     }),
   listProjectAssets: (projectId: number) =>
     request<Asset[]>(`/api/projects/${projectId}/assets`),

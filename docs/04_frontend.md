@@ -74,7 +74,11 @@ src/i18n/
 
 ### 2.4 全局资产库（独立入口）
 
-独立页面管理全局资产（人物 / 道具 / 场景）。每个资产有视觉锚点 spec（对齐 [02 CharacterBible](../test/instructions/02_剧集策划.md) 的视觉锚点字段），可触发 04/05 出图，生成的参考图回填到资产卡片；`source_project_id` 记录来源项目（若由某项目 Bible 生成）。资产是画布节点的来源；EP 工坊从全局库引用资产入画。
+独立页面管理全局资产（人物 / 道具 / 场景）。资产卡片的形态与画布 `ImageNode` 对齐，复用同一个 `ImagePreviewFrame`（左上角 TAG = 资产类型、右上角上传、左下角放大预览）：**上传图像 → 预览 → 打标签（人物/道具/场景）→ 填名称（必填）+ 描述（可选）→ 保存**，上传走与 ImageNode 共用的 `readImageAsDataUri`（`src/utils/image.ts`）读成 data URI，存入 `Asset.image_path`（语义即"图像 URI"，画布节点 `ImageNode` 引用该字段绑定数据）。不再提供"参考图路径 / URL"文本输入——图像统一由上传产生。资产可删除（`DELETE /api/assets/{id}`，删除前弹确认；后端会先解除其与项目的引用关系再删行）。每个资产仍可触发 04/05 出图回填，`source_project_id` 记录来源项目（若由某项目 Bible 生成）。资产是画布节点的来源；EP 工坊从全局库引用资产入画。
+
+> 破坏性 / 难撤销操作统一走 `src/components/ConfirmDialog.tsx` 的 `useConfirm()`（返回 `Promise<boolean>`）：删除资产、覆盖已有上传图像、删除画布节点都 `await confirm(...)`，护栏一致且 DRY。覆盖确认内建在共享的 `ImagePreviewFrame` 里，资产库与画布 ImageNode 两处一致生效。
+
+> 时间戳显示（创建于 / 上次保存 / 生成于）统一走 `src/utils/datetime.ts` 的 `formatTimestamp`（`YYYY-MM-DD HH:mm`），画布内的 `formatCanvasTimestamp` 是其薄封装，避免同一概念散落多套格式。
 
 ## 3. EP 工坊画布（核心交互，ADR-001）
 
@@ -122,6 +126,7 @@ src/i18n/
 - 数据节点不接受输入（无输入口）。
 - 不允许成环（DAG）。
 - 连线非法时即时反馈（连线变红 / 禁止落点），不等提交后端报错。
+- 删除**节点**时弹确认，避免误删（React Flow 的 `onBeforeDelete` 返回 `Promise<boolean>` 拦截）；删除**连线**不弹确认——成本低且易恢复。
 
 > 这正是需求方对前端的定位——"约束避免超出 core 边界"。后端 schema 是最终防线，前端护栏是第一道，两者用同一套端口类型规则，前端只是把它表达成交互。
 

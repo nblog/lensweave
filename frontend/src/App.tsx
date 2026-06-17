@@ -2,6 +2,7 @@
  * switcher; a view switch driven by the nav store (docs/04 §2). A real router
  * arrives with more pages. */
 import { useTranslation } from "react-i18next";
+import { ArrowLeft } from "lucide-react";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
@@ -55,6 +56,7 @@ function App() {
                 : goProjects()
             }
           >
+            <ArrowLeft size={16} aria-hidden />
             {t("app.back")}
           </button>
         )}

@@ -27,6 +27,15 @@ import {
   type NodeTypes,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import {
+  Boxes,
+  Clapperboard,
+  Image as ImageIcon,
+  RotateCw,
+  Save,
+  Sparkles,
+  Type,
+} from "lucide-react";
 
 import {
   api,
@@ -40,6 +49,13 @@ import {
   type SegmentRow,
   type VideoGenSettings,
 } from "../api/client";
+import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
+import {
+  ImagePreviewDialog,
+  type ImagePreviewState,
+} from "../components/ImagePreviewDialog";
+import { useConfirm } from "../components/confirm-context";
+import { formatTimestamp } from "../utils/datetime";
 
 type NodeData = {
   kind: NodeKind;
@@ -78,7 +94,6 @@ type RuntimeNodeData = NodeData & {
 };
 
 type CanvasNode = Node<NodeData, "canvasNode">;
-type ImagePreviewState = { src: string; title: string };
 type NodeRunState = Pick<NodeData, "jobStatus" | "generatedAt">;
 
 // Port type produced by each node kind, and inputs each adapter accepts —
@@ -118,6 +133,7 @@ export function CanvasWorkshop({
   void projectId;
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const confirm = useConfirm();
 
   const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.listAssets() });
   const videoSettings = useQuery({
@@ -187,6 +203,21 @@ export function CanvasWorkshop({
   const handlePreviewImage = useCallback((src: string, title: string) => {
     setPreviewImage({ src, title });
   }, []);
+
+  // Confirm node deletions to avoid accidental loss (docs/04 §3.4); deleting an
+  // edge alone is cheap and reversible, so it passes through without a prompt.
+  const handleBeforeDelete = useCallback(
+    async ({ nodes: toDelete }: { nodes: Node[]; edges: Edge[] }) => {
+      if (toDelete.length === 0) return true;
+      return confirm({
+        title: t("confirm.deleteNodeTitle", { count: toDelete.length }),
+        message: t("confirm.deleteNodeMessage"),
+        confirmLabel: t("confirm.delete"),
+        danger: true,
+      });
+    },
+    [confirm, t],
+  );
 
   const seedStoryboard = async () => {
     await api.setStoryboard(episodeId, {
@@ -526,26 +557,35 @@ export function CanvasWorkshop({
             <option value="routin">{t("canvas.channelRoutin")}</option>
           </select>
         </label>
-        <button onClick={() => addNode("text", t("canvas.nodeText"))}>
-          + {t("canvas.nodeText")}
-        </button>
-        <button onClick={() => addNode("image", t("canvas.nodeImage"))}>
-          + {t("canvas.nodeImage")}
-        </button>
         <button onClick={() => addNode("text_gen", t("canvas.nodeTextGen"))}>
-          + {t("canvas.nodeTextGen")}
+          <Sparkles size={15} aria-hidden />
+          <Type size={15} aria-hidden />
+          {t("canvas.nodeTextGen")}
         </button>
         <button onClick={() => addNode("image_gen", t("canvas.nodeImageGen"))}>
-          + {t("canvas.nodeImageGen")}
+          <Sparkles size={15} aria-hidden />
+          <ImageIcon size={15} aria-hidden />
+          {t("canvas.nodeImageGen")}
         </button>
         <button onClick={() => addNode("video_gen", t("canvas.nodeVideoGen"))}>
-          + {t("canvas.nodeVideoGen")}
+          <Sparkles size={15} aria-hidden />
+          <Clapperboard size={15} aria-hidden />
+          {t("canvas.nodeVideoGen")}
+        </button>
+        <button onClick={() => addNode("text", t("canvas.nodeText"))}>
+          <Type size={15} aria-hidden />
+          {t("canvas.nodeText")}
+        </button>
+        <button onClick={() => addNode("image", t("canvas.nodeImage"))}>
+          <ImageIcon size={15} aria-hidden />
+          {t("canvas.nodeImage")}
         </button>
         {segments.data && segments.data.length === 0 && (
           <button onClick={seedStoryboard}>{t("canvas.seedStoryboard")}</button>
         )}
         <div className="palette-spacer" />
         <button className="primary" onClick={handleSave}>
+          <Save size={15} aria-hidden />
           {t("canvas.save")}
         </button>
       </div>
@@ -557,11 +597,11 @@ export function CanvasWorkshop({
           {/* Top-left status overlay: node count + last saved (no assets). */}
           <div className="canvas-status">
             <span>
-              <span className="status-icon status-icon-nodes" aria-hidden />
+              <Boxes size={14} aria-hidden />
               {t("canvas.nodeCount")}: {nodes.length}
             </span>
             <span>
-              <span className="status-icon status-icon-save" aria-hidden />
+              <Save size={14} aria-hidden />
               {t("canvas.lastSaved")}: {savedAt || t("canvas.never")}
             </span>
           </div>
@@ -574,6 +614,7 @@ export function CanvasWorkshop({
             onConnect={onConnect}
             onNodeClick={(_, n) => setSelectedId(n.id)}
             onPaneClick={() => setSelectedId(null)}
+            onBeforeDelete={handleBeforeDelete}
             onNodesDelete={(deleted) => {
               if (deleted.some((node) => node.id === selectedId)) {
                 setSelectedId(null);
@@ -908,7 +949,7 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
               title={t("canvas.retry")}
               aria-label={t("canvas.retry")}
             >
-              <span className="retry-icon" aria-hidden />
+              <RotateCw size={14} aria-hidden />
             </button>
           )}
         </div>
@@ -1009,7 +1050,7 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
               title={node.canRenderVideo ? t("canvas.retry") : t("canvas.needVideoGen")}
               aria-label={t("canvas.retry")}
             >
-              <span className="retry-icon" aria-hidden />
+              <RotateCw size={14} aria-hidden />
             </button>
           )}
         </div>
@@ -1073,133 +1114,6 @@ function NodeRunMeta({ node }: { node: NodeRunState }) {
     <div className="node-run-meta">
       <span aria-hidden>{icon}</span>
       {node.generatedAt && <time>{node.generatedAt}</time>}
-    </div>
-  );
-}
-
-function ImagePreviewFrame({
-  src,
-  alt,
-  className,
-  onPreview,
-  onUpload,
-  onRetry,
-  retryDisabled = false,
-}: {
-  src?: string;
-  alt: string;
-  className?: string;
-  onPreview: (src: string, title: string) => void;
-  onUpload?: (imageUri: string) => void;
-  onRetry?: () => void;
-  retryDisabled?: boolean;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div className={`node-media-frame ${className ?? ""}`}>
-      {src ? <img src={src} alt={alt} /> : <span>{t("canvas.noPreview")}</span>}
-      {src && (
-        <button
-          className="node-preview nodrag"
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onPreview(src, alt);
-          }}
-          title={t("canvas.previewImage")}
-          aria-label={t("canvas.previewImage")}
-        >
-          <span className="preview-icon" aria-hidden />
-        </button>
-      )}
-      {onUpload && (
-        <label
-          className="node-upload nodrag"
-          title={t("canvas.uploadImage")}
-          aria-label={t("canvas.uploadImage")}
-          onPointerDown={(e) => e.stopPropagation()}
-        >
-          <input
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) {
-                readImageAsDataUri(file, onUpload);
-              }
-              e.currentTarget.value = "";
-            }}
-          />
-          <span className="upload-icon" aria-hidden />
-        </label>
-      )}
-      {onRetry && (
-        <button
-          className="node-retry nodrag"
-          disabled={retryDisabled}
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onRetry();
-          }}
-          title={t("canvas.retry")}
-          aria-label={t("canvas.retry")}
-        >
-          <span className="retry-icon" aria-hidden />
-        </button>
-      )}
-    </div>
-  );
-}
-
-function ImagePreviewDialog({
-  preview,
-  onClose,
-}: {
-  preview: ImagePreviewState;
-  onClose: () => void;
-}) {
-  const { t } = useTranslation();
-
-  return (
-    <div
-      className="image-preview-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label={preview.title}
-      onMouseDown={onClose}
-    >
-      <div
-        className="image-preview-panel"
-        onMouseDown={(event) => event.stopPropagation()}
-      >
-        <div className="image-preview-actions">
-          <button
-            className="image-preview-action"
-            type="button"
-            onClick={() => {
-              downloadImage(preview.src, preview.title);
-            }}
-            title={t("canvas.downloadImage")}
-            aria-label={t("canvas.downloadImage")}
-          >
-            <span className="download-icon" aria-hidden />
-          </button>
-          <button
-            className="image-preview-action"
-            type="button"
-            onClick={onClose}
-            title={t("canvas.closePreview")}
-            aria-label={t("canvas.closePreview")}
-          >
-            <span className="close-icon" aria-hidden />
-          </button>
-        </div>
-        <img className="image-preview-full" src={preview.src} alt={preview.title} />
-      </div>
     </div>
   );
 }
@@ -1551,60 +1465,8 @@ function mediaUrl(uri: string): string {
   return uri;
 }
 
-function imageDownloadName(src: string, title: string): string {
-  const safeTitle =
-    title
-      .trim()
-      .replace(/[\\/:*?"<>|]+/g, "-")
-      .replace(/\s+/g, "-")
-      .slice(0, 60) || "image";
-  return `${safeTitle}.${imageExtensionFromSrc(src)}`;
-}
-
-function downloadImage(src: string, title: string): void {
-  triggerDownload(src, imageDownloadName(src, title));
-}
-
-function triggerDownload(href: string, filename: string): void {
-  const link = document.createElement("a");
-  link.href = href;
-  link.download = filename;
-  link.target = "_blank";
-  link.rel = "noreferrer";
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-}
-
-function imageExtensionFromSrc(src: string): string {
-  if (src.startsWith("data:image/")) {
-    const subtype = src.slice("data:image/".length).split(/[;,]/)[0];
-    if (subtype === "jpeg") return "jpg";
-    if (/^[a-z0-9.+-]+$/i.test(subtype)) return subtype.split("+")[0];
-  }
-  const path = src.split(/[?#]/, 1)[0].toLowerCase();
-  const match = path.match(/\.(png|jpe?g|webp|gif)$/);
-  if (!match) return "png";
-  return match[1] === "jpeg" ? "jpg" : match[1];
-}
-
-function readImageAsDataUri(file: File, onLoad: (uri: string) => void): void {
-  const reader = new FileReader();
-  reader.addEventListener("load", () => {
-    if (typeof reader.result === "string") {
-      onLoad(reader.result);
-    }
-  });
-  reader.readAsDataURL(file);
-}
-
 function formatCanvasTimestamp(date = new Date()): string {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, "0");
-  const dd = String(date.getDate()).padStart(2, "0");
-  const hh = String(date.getHours()).padStart(2, "0");
-  const min = String(date.getMinutes()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd} ${hh}:${min}`;
+  return formatTimestamp(date);
 }
 
 function nodeKindLabelKey(kind: NodeKind): string {
