@@ -572,6 +572,20 @@ export function CanvasWorkshop({
             />
           )}
 
+          {selected &&
+            canRenameNodeTitle(selected.data.kind) &&
+            selected.data.kind !== "text" &&
+            selected.data.kind !== "image" && (
+              <NodeTitleEditor
+                key={`${selected.id}-title`}
+                value={selected.data.label}
+                placeholder={t(`canvas.${nodeKindLabelKey(selected.data.kind)}`)}
+                onChange={(label) =>
+                  updateNode(setNodes, selected.id, { label })
+                }
+              />
+            )}
+
           {selected && ADAPTER_INPUTS[selected.data.kind] && (
             <div className="ordered-inputs">
               <label>{t("canvas.orderedInputs")}</label>
@@ -741,7 +755,7 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
   const isTextLike = node.kind === "text" || node.kind === "text_gen";
   const isImageLike = node.kind === "image" || node.kind === "image_gen";
   const isVideoLike = node.kind === "video" || node.kind === "video_gen";
-  const hasEditableTitle = node.kind === "text" || node.kind === "image";
+  const hasEditableTitle = canRenameNodeTitle(node.kind);
   const imagePreview = imagePreviewUrl(node, node.assets);
   const videoPreview = videoPreviewUrl(node);
 
@@ -1081,6 +1095,29 @@ function ImagePreviewDialog({
         </div>
         <img className="image-preview-full" src={preview.src} alt={preview.title} />
       </div>
+    </div>
+  );
+}
+
+function NodeTitleEditor({
+  value,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="content-editor node-title-editor">
+      <label>{t("canvas.nodeTitle")}</label>
+      <input
+        value={value ?? ""}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
@@ -1468,6 +1505,17 @@ function nodeKindLabelKey(kind: NodeKind): string {
     case "video_gen":
       return "nodeVideoGen";
   }
+}
+
+function canRenameNodeTitle(kind: NodeKind): boolean {
+  return (
+    kind === "text" ||
+    kind === "image" ||
+    kind === "video" ||
+    kind === "text_gen" ||
+    kind === "image_gen" ||
+    kind === "video_gen"
+  );
 }
 
 function normalizeNodeLabel(name: string, kind: NodeKind): string {

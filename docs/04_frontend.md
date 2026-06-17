@@ -117,7 +117,7 @@ src/i18n/
 
 ### 3.3 右侧节点编辑面板
 
-选中节点 → 右侧编辑其参数：TextNode 编辑文本 / 绑定 segment；ImageNode 选择引用的全局资产、查看参考图；适配器节点查看 §3.2 的有序输入清单与生成参数覆盖。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
+选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的全局资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ### 3.4 前端即护栏：端口类型校验
 

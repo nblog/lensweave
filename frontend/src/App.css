@@ -574,6 +574,10 @@ button.primary:disabled {
   resize: vertical;
 }
 
+.node-title-editor {
+  margin-bottom: 0.75rem;
+}
+
 .text-preview {
   max-height: 220px;
   overflow: auto;
