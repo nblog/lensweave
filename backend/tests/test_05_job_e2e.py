@@ -27,7 +27,7 @@ def test_single_segment_render_e2e(client) -> None:
 
     episode = client.post(
         f"/api/projects/{pid}/episodes",
-        json={"episode_no": 1, "title": "EP01", "total_duration_sec": 6},
+        json={"episode_no": 1, "title": "EP01"},
     ).json()
     eid = episode["id"]
 
@@ -92,7 +92,7 @@ def test_text_and_image_generation_jobs_over_http(client) -> None:
     project = client.post("/api/projects", json={"title": "Text Image"}).json()
     episode = client.post(
         f"/api/projects/{project['id']}/episodes",
-        json={"episode_no": 1, "title": "EP01", "total_duration_sec": 6},
+        json={"episode_no": 1, "title": "EP01"},
     ).json()
     eid = episode["id"]
 

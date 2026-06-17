@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from ai_drama import services
 from ai_drama.config import get_settings
 from ai_drama.db import SessionLocal, init_db
+from ai_drama.model_catalog import VideoGenSettings, get_seedance_video_settings
 from ai_drama.models import (
     AssetCreate,
     AssetRead,
@@ -90,6 +91,15 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # --- model catalog ---
+
+    @app.get(
+        "/api/model-catalog/seedance/video-settings",
+        response_model=VideoGenSettings,
+    )
+    def seedance_video_settings() -> VideoGenSettings:
+        return get_seedance_video_settings()
 
     # --- projects ---
 
@@ -312,7 +322,6 @@ def create_app() -> FastAPI:
                 graph,
                 output_node_id=body.output_node_id,
                 resolve_asset_image=image_for_asset,
-                duration=segment.duration_sec,
             )
         except services.CompileError as exc:
             raise HTTPException(400, str(exc)) from exc

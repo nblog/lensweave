@@ -70,11 +70,7 @@ src/i18n/
 - **自动分集**：调 01→02 产出 EpisodeMap，按"一句话主线"一行一集自动切。
 - **手动分集**：用户自己划定集边界。
 
-两者都落成 `Episode` 列表。**手动添加分集的表单采用竖排字段**：每个参数独占一行、上方带 label，让参数含义一目了然——
-- 第一行：`标题`（label + 输入框占整行）
-- 第二行：`时长（秒）`（label + 输入框）
-
-> 需求方明确：标题与时长不要挤在一行，要"标题直接占一行（上面有 label：标题），时长放第二行（上面有 label：时长（秒）），更好理解参数含义"。
+两者都落成 `Episode` 列表。手动添加分集的表单只要求填写 `标题`，不在创建 EP 时询问时长；具体生成片段的时长由 EP 工坊里的 `VideoGenNode` 参数控制。后端仍可保留 `Episode.total_duration_sec` 作为分镜闭合校验的模型字段，但它不是创建 EP 的前端输入项。
 
 ### 2.4 全局资产库（独立入口）
 
@@ -117,7 +113,7 @@ src/i18n/
 
 ### 3.3 右侧节点编辑面板
 
-选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的全局资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
+选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的全局资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ### 3.4 前端即护栏：端口类型校验
 

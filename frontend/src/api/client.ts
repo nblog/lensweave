@@ -107,6 +107,23 @@ export interface Job {
   updated_at: string;
 }
 
+export interface VideoDurationSettings {
+  min: number;
+  max: number;
+  step: number;
+  default: number;
+}
+
+export interface VideoResolutionSettings {
+  options: string[];
+  default: string;
+}
+
+export interface VideoGenSettings {
+  duration: VideoDurationSettings;
+  resolution: VideoResolutionSettings;
+}
+
 export const DEFAULT_GENERATION_CHANNEL: GenerationChannel =
   import.meta.env.VITE_GENERATION_CHANNEL === "routin" ? "routin" : "mock";
 
@@ -123,6 +140,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  // model catalog
+  getSeedanceVideoSettings: () =>
+    request<VideoGenSettings>("/api/model-catalog/seedance/video-settings"),
+
   // projects
   listProjects: () => request<Project[]>("/api/projects"),
   createProject: (title: string) =>
@@ -164,7 +185,7 @@ export const api = {
     request<Episode[]>(`/api/projects/${projectId}/episodes`),
   createEpisode: (
     projectId: number,
-    body: { episode_no: number; title: string; total_duration_sec: number },
+    body: { episode_no: number; title: string; total_duration_sec?: number },
   ) =>
     request<Episode>(`/api/projects/${projectId}/episodes`, {
       method: "POST",

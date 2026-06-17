@@ -46,6 +46,26 @@ def test_compile_orders_images_by_edge_order():
     assert req.prompt == "a quiet courtyard"
     # Edge order 1 (char) before order 3 (scene); text input carries no image.
     assert [s.ref for s in req.images] == ["char.png", "scene.png"]
+    assert req.duration == 15
+    assert req.resolution == "720p"
+
+
+def test_compile_uses_video_gen_node_settings():
+    g = _graph()
+    g.nodes[-1].data = {"duration": 12, "resolution": "1080p"}
+
+    req = compile_video_request(g, output_node_id="vg", resolve_asset_image=_image_for)
+
+    assert req.duration == 12
+    assert req.resolution == "1080p"
+
+
+def test_compile_rejects_video_gen_duration_out_of_range():
+    g = _graph()
+    g.nodes[-1].data = {"duration": 16}
+
+    with pytest.raises(CompileError, match="between 4 and 15"):
+        compile_video_request(g, output_node_id="vg", resolve_asset_image=_image_for)
 
 
 def test_compile_preserves_mixed_input_order_for_provider_context():

@@ -1,8 +1,7 @@
 /**
  * Project detail page (docs/04 §2.3). After creating a project the user sees
- * only its episodes — assets live in the global library (ADR-005). The
- * add-episode form is laid out vertically: each field on its own row with a
- * label above it, so parameter meaning is clear.
+ * only its episodes — assets live in the global library (ADR-005). Video
+ * generation parameters live on VideoGen nodes in the EP workshop.
  */
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -21,14 +20,12 @@ export function ProjectPage({ projectId }: { projectId: number }) {
   });
 
   const [title, setTitle] = useState("");
-  const [duration, setDuration] = useState(6);
 
   const createEpisode = useMutation({
     mutationFn: () =>
       api.createEpisode(projectId, {
         episode_no: (episodes.data?.length ?? 0) + 1,
         title: title || `EP${(episodes.data?.length ?? 0) + 1}`,
-        total_duration_sec: duration,
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["episodes", projectId] });
@@ -53,16 +50,6 @@ export function ProjectPage({ projectId }: { projectId: number }) {
             id="ep-title"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="ep-duration">{t("project.duration")}</label>
-          <input
-            id="ep-duration"
-            type="number"
-            min={1}
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
           />
         </div>
         <button type="submit" className="primary">

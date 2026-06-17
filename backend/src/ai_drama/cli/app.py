@@ -147,7 +147,6 @@ def seed_demo(
             graph,
             output_node_id="vgen",
             resolve_asset_image=image_for_asset,
-            duration=segment.duration_sec,
         )
         job = services.create_video_job(
             db, segment_id=segment.id, request=request, channel=channel

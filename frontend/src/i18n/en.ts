@@ -72,6 +72,8 @@ const en = {
     pickSegment: "Bind to segment",
     targetSegment: "Target segment",
     autoTargetSegment: "Auto (use this episode's segment when there is only one)",
+    videoDuration: "Video duration (sec)",
+    videoResolution: "Resolution",
     pickAsset: "Reference asset",
     noBinding: "No binding",
     noSegments: "This episode has no segments. Seed a storyboard first.",

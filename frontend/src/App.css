@@ -578,6 +578,10 @@ button.primary:disabled {
   margin-bottom: 0.75rem;
 }
 
+.video-gen-settings {
+  margin-bottom: 0.65rem;
+}
+
 .text-preview {
   max-height: 220px;
   overflow: auto;
@@ -606,6 +610,10 @@ button.primary:disabled {
 
 .inspector-run-meta {
   margin-top: 0.65rem;
+}
+
+.video-gen-run-meta {
+  margin-top: 0.75rem;
 }
 
 .clip {
@@ -706,6 +714,14 @@ button.primary:disabled {
   box-shadow:
     0 0 0 3px rgba(142, 106, 60, 0.16),
     0 8px 20px rgba(43, 42, 40, 0.1);
+}
+
+.canvas-node-video_gen {
+  width: 280px;
+}
+
+.canvas-node-video_gen .video-frame {
+  aspect-ratio: 9 / 12;
 }
 
 .canvas-node-header {
@@ -837,6 +853,10 @@ button.primary:disabled {
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+.canvas-node-video_gen .node-media-frame video {
+  object-fit: contain;
 }
 
 .node-media-frame video {

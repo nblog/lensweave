@@ -26,6 +26,7 @@ from ai_drama.adapters.base import (
     VideoGenRequest,
     VideoImageSlot,
 )
+from ai_drama.model_catalog import VideoGenSettings, get_seedance_video_settings
 from ai_drama.models import CanvasGraph, NodeKind, PortType
 from ai_drama.models.enums import NODE_OUTPUT_TYPE, is_adapter_node
 
@@ -58,6 +59,35 @@ def _image_ref_from_node(node, resolve_asset_image: Callable[[int | None], str |
     if node.kind is NodeKind.IMAGE:
         return resolve_asset_image(node.ref_id)
     return None
+
+
+def _video_duration_from_node(data: dict, settings: VideoGenSettings) -> int:
+    value = data.get("duration")
+    if value is None:
+        return settings.duration.default
+    if isinstance(value, bool):
+        raise CompileError("video_gen duration must be an integer")
+    if isinstance(value, float) and not value.is_integer():
+        raise CompileError("video_gen duration must be an integer")
+    try:
+        duration = int(value)
+    except (TypeError, ValueError) as exc:
+        raise CompileError("video_gen duration must be an integer") from exc
+
+    if not settings.duration.min <= duration <= settings.duration.max:
+        raise CompileError(
+            "video_gen duration must be between "
+            f"{settings.duration.min} and {settings.duration.max} seconds"
+        )
+    return duration
+
+
+def _video_resolution_from_node(data: dict, settings: VideoGenSettings) -> str:
+    value = data.get("resolution") or settings.resolution.default
+    if not isinstance(value, str) or value not in settings.resolution.options:
+        options = ", ".join(settings.resolution.options)
+        raise CompileError(f"video_gen resolution must be one of: {options}")
+    return value
 
 
 def compile_text_request(
@@ -139,7 +169,7 @@ def compile_video_request(
     *,
     output_node_id: str,
     resolve_asset_image,
-    duration: int | None = None,
+    video_settings: VideoGenSettings | None = None,
 ) -> VideoGenRequest:
     """Compile a VIDEO_GEN adapter node's inputs into a VideoGenRequest.
 
@@ -182,9 +212,12 @@ def compile_video_request(
     if not prompt:
         raise CompileError("no text input with a prompt feeds the video_gen node")
 
+    data = node.data or {}
+    settings = video_settings or get_seedance_video_settings()
     return VideoGenRequest(
         prompt=prompt,
         images=images,
         ordered_content=ordered_content,
-        duration=duration,
+        duration=_video_duration_from_node(data, settings),
+        resolution=_video_resolution_from_node(data, settings),
     )

@@ -38,6 +38,7 @@ import {
   type Job,
   type NodeKind,
   type SegmentRow,
+  type VideoGenSettings,
 } from "../api/client";
 
 type NodeData = {
@@ -48,6 +49,8 @@ type NodeData = {
   imageUrl?: string;
   videoUrl?: string;
   clipPath?: string | null;
+  videoDuration?: number;
+  videoResolution?: string;
   jobId?: string;
   jobStatus?: Job["status"];
   jobError?: string | null;
@@ -117,6 +120,10 @@ export function CanvasWorkshop({
   const qc = useQueryClient();
 
   const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.listAssets() });
+  const videoSettings = useQuery({
+    queryKey: ["modelCatalog", "seedance", "videoSettings"],
+    queryFn: () => api.getSeedanceVideoSettings(),
+  });
   const segments = useQuery({
     queryKey: ["segments", episodeId],
     queryFn: () => api.listSegments(episodeId),
@@ -214,12 +221,23 @@ export function CanvasWorkshop({
 
   const addNode = (kind: NodeKind, label: string) => {
     const id = nextId(kind);
+    const data: NodeData = {
+      kind,
+      label,
+      refId: null,
+      ...(kind === "video_gen"
+        ? {
+            videoDuration: videoSettings.data?.duration.default,
+            videoResolution: videoSettings.data?.resolution.default,
+          }
+        : {}),
+    };
     setNodes((ns) => [
       ...ns,
       {
         id,
         position: { x: 80 + ns.length * 36, y: 70 + ns.length * 28 },
-        data: { kind, label, refId: null },
+        data,
         type: "canvasNode",
       },
     ]);
@@ -228,8 +246,8 @@ export function CanvasWorkshop({
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
 
   const graphDto: CanvasGraphDTO = useMemo(
-    () => flowToDto(episodeId, nodes, edges),
-    [episodeId, nodes, edges],
+    () => flowToDto(episodeId, nodes, edges, videoSettings.data),
+    [episodeId, nodes, edges, videoSettings.data],
   );
 
   const orderedInputsByNodeId = useMemo(
@@ -282,7 +300,10 @@ export function CanvasWorkshop({
 
   const handleGenerateText = useCallback(
     async (nodeId: string) => {
-      await api.saveCanvas(episodeId, flowToDto(episodeId, nodes, edges));
+      await api.saveCanvas(
+        episodeId,
+        flowToDto(episodeId, nodes, edges, videoSettings.data),
+      );
       setSavedAt(formatCanvasTimestamp());
       setRenderingNodeId(nodeId);
       updateNode(setNodes, nodeId, {
@@ -297,7 +318,10 @@ export function CanvasWorkshop({
         const patch = patchForJob(job);
         const nextNodes = patchNodes(nodes, nodeId, patch);
         setNodes(nextNodes);
-        await api.saveCanvas(episodeId, flowToDto(episodeId, nextNodes, edges));
+        await api.saveCanvas(
+          episodeId,
+          flowToDto(episodeId, nextNodes, edges, videoSettings.data),
+        );
         setSavedAt(formatCanvasTimestamp());
       } catch (error) {
         updateNode(setNodes, nodeId, {
@@ -309,12 +333,15 @@ export function CanvasWorkshop({
         setRenderingNodeId((current) => (current === nodeId ? null : current));
       }
     },
-    [edges, episodeId, generationChannel, nodes, setNodes],
+    [edges, episodeId, generationChannel, nodes, setNodes, videoSettings.data],
   );
 
   const handleGenerateImage = useCallback(
     async (nodeId: string) => {
-      await api.saveCanvas(episodeId, flowToDto(episodeId, nodes, edges));
+      await api.saveCanvas(
+        episodeId,
+        flowToDto(episodeId, nodes, edges, videoSettings.data),
+      );
       setSavedAt(formatCanvasTimestamp());
       setRenderingNodeId(nodeId);
       updateNode(setNodes, nodeId, {
@@ -330,7 +357,10 @@ export function CanvasWorkshop({
         const patch = patchForJob(job);
         const nextNodes = patchNodes(nodes, nodeId, patch);
         setNodes(nextNodes);
-        await api.saveCanvas(episodeId, flowToDto(episodeId, nextNodes, edges));
+        await api.saveCanvas(
+          episodeId,
+          flowToDto(episodeId, nextNodes, edges, videoSettings.data),
+        );
         setSavedAt(formatCanvasTimestamp());
       } catch (error) {
         updateNode(setNodes, nodeId, {
@@ -342,7 +372,7 @@ export function CanvasWorkshop({
         setRenderingNodeId((current) => (current === nodeId ? null : current));
       }
     },
-    [edges, episodeId, generationChannel, nodes, setNodes],
+    [edges, episodeId, generationChannel, nodes, setNodes, videoSettings.data],
   );
 
   const handleRenderVideo = useCallback(
@@ -355,7 +385,10 @@ export function CanvasWorkshop({
       );
       if (segmentId == null) return;
 
-      await api.saveCanvas(episodeId, flowToDto(episodeId, nodes, edges));
+      await api.saveCanvas(
+        episodeId,
+        flowToDto(episodeId, nodes, edges, videoSettings.data),
+      );
       setSavedAt(formatCanvasTimestamp());
       setRenderingNodeId(nodeId);
       updateNode(setNodes, nodeId, {
@@ -386,7 +419,10 @@ export function CanvasWorkshop({
           latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current));
           setNodes(latestNodes);
         }
-        await api.saveCanvas(episodeId, flowToDto(episodeId, latestNodes, edges));
+        await api.saveCanvas(
+          episodeId,
+          flowToDto(episodeId, latestNodes, edges, videoSettings.data),
+        );
         setSavedAt(formatCanvasTimestamp());
       } catch (error) {
         updateNode(setNodes, nodeId, {
@@ -398,7 +434,15 @@ export function CanvasWorkshop({
         setRenderingNodeId((current) => (current === nodeId ? null : current));
       }
     },
-    [edges, episodeId, generationChannel, nodes, segments.data, setNodes],
+    [
+      edges,
+      episodeId,
+      generationChannel,
+      nodes,
+      segments.data,
+      setNodes,
+      videoSettings.data,
+    ],
   );
 
   // Ordered inputs of the selected adapter node (for the inspector list).
@@ -692,6 +736,60 @@ export function CanvasWorkshop({
                   </select>
                 </div>
               )}
+              <div className="content-editor video-gen-settings">
+                <label htmlFor={`video-duration-${selected.id}`}>
+                  {t("canvas.videoDuration")}
+                </label>
+                <input
+                  id={`video-duration-${selected.id}`}
+                  type="number"
+                  min={videoSettings.data?.duration.min}
+                  max={videoSettings.data?.duration.max}
+                  step={videoSettings.data?.duration.step}
+                  value={
+                    selected.data.videoDuration ??
+                    videoSettings.data?.duration.default ??
+                    ""
+                  }
+                  disabled={!videoSettings.data}
+                  onChange={(e) =>
+                    videoSettings.data &&
+                    updateNode(setNodes, selected.id, {
+                      videoDuration: normalizeVideoDuration(
+                        e.target.value,
+                        videoSettings.data,
+                      ),
+                    })
+                  }
+                />
+                <label htmlFor={`video-resolution-${selected.id}`}>
+                  {t("canvas.videoResolution")}
+                </label>
+                <select
+                  id={`video-resolution-${selected.id}`}
+                  value={
+                    selected.data.videoResolution ??
+                    videoSettings.data?.resolution.default ??
+                    ""
+                  }
+                  disabled={!videoSettings.data}
+                  onChange={(e) =>
+                    videoSettings.data &&
+                    updateNode(setNodes, selected.id, {
+                      videoResolution: normalizeVideoResolution(
+                        e.target.value,
+                        videoSettings.data,
+                      ),
+                    })
+                  }
+                >
+                  {(videoSettings.data?.resolution.options ?? []).map((resolution) => (
+                    <option key={resolution} value={resolution}>
+                      {resolution}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button
                 className="primary block"
                 disabled={!selectedVideoCanRender || renderingNodeId === selected.id}
@@ -704,12 +802,21 @@ export function CanvasWorkshop({
               {!selectedVideoCanRender && (
                 <p className="muted small">{t("canvas.needVideoGen")}</p>
               )}
+              {selected.data.jobStatus && (
+                <div className="inspector-run-meta video-gen-run-meta">
+                  <NodeRunMeta node={selected.data} />
+                </div>
+              )}
+              {selected.data.jobError && (
+                <p className="error small">{selected.data.jobError}</p>
+              )}
             </>
           )}
 
           {selected &&
             selected.data.jobStatus &&
-            selected.data.kind !== "image_gen" && (
+            selected.data.kind !== "image_gen" &&
+            selected.data.kind !== "video_gen" && (
             <div className="job-box">
               <span>
                 {t("canvas.jobStatus")}:{" "}
@@ -721,9 +828,7 @@ export function CanvasWorkshop({
               {selected.data.kind === "text_gen" && selected.data.text && (
                 <pre className="text-preview">{selected.data.text}</pre>
               )}
-              {(selected.data.kind === "video" ||
-                selected.data.kind === "video_gen") &&
-                videoPreviewUrl(selected.data) && (
+              {selected.data.kind === "video" && videoPreviewUrl(selected.data) && (
                 <video
                   className="clip"
                   src={videoPreviewUrl(selected.data)}
@@ -1240,6 +1345,7 @@ function flowToDto(
   episodeId: number,
   nodes: CanvasNode[],
   edges: Edge[],
+  videoSettings?: VideoGenSettings,
 ): CanvasGraphDTO {
   return {
     episode_id: episodeId,
@@ -1249,7 +1355,7 @@ function flowToDto(
       name: n.data.label,
       ref_id: n.data.refId,
       position: [n.position.x, n.position.y],
-      data: nodeDataToPayload(n.data),
+      data: nodeDataToPayload(n.data, videoSettings),
     })),
     edges: edges.map((e) => ({
       id: e.id,
@@ -1277,6 +1383,8 @@ function dtoToFlow(graph: CanvasGraphDTO): {
         imageUrl: readString(n.data?.image_uri) ?? readString(n.data?.image_url),
         videoUrl: readString(n.data?.video_url),
         clipPath: readString(n.data?.clip_path) ?? null,
+        videoDuration: readVideoDuration(n.data?.duration),
+        videoResolution: readVideoResolution(n.data?.resolution),
         jobId: readString(n.data?.job_id),
         jobStatus: readJobStatus(n.data?.job_status),
         jobError: readString(n.data?.job_error) ?? null,
@@ -1292,7 +1400,10 @@ function dtoToFlow(graph: CanvasGraphDTO): {
   };
 }
 
-function nodeDataToPayload(data: NodeData): Record<string, unknown> {
+function nodeDataToPayload(
+  data: NodeData,
+  videoSettings?: VideoGenSettings,
+): Record<string, unknown> {
   const payload: Record<string, unknown> = {};
   if (data.text) {
     payload.visual_prompt = data.text;
@@ -1304,6 +1415,12 @@ function nodeDataToPayload(data: NodeData): Record<string, unknown> {
   }
   if (data.videoUrl) payload.video_url = data.videoUrl;
   if (data.clipPath) payload.clip_path = data.clipPath;
+  if (data.kind === "video_gen") {
+    const duration = data.videoDuration ?? videoSettings?.duration.default;
+    const resolution = data.videoResolution ?? videoSettings?.resolution.default;
+    if (duration != null) payload.duration = duration;
+    if (resolution) payload.resolution = resolution;
+  }
   if (data.jobId) payload.job_id = data.jobId;
   if (data.jobStatus) payload.job_status = data.jobStatus;
   if (data.jobError) payload.job_error = data.jobError;
@@ -1522,6 +1639,31 @@ function normalizeNodeLabel(name: string, kind: NodeKind): string {
   if (name === "文生文" && kind === "text_gen") return "文本生成";
   if (name === "图生成" && kind === "image_gen") return "图像生成";
   return name || kind;
+}
+
+function normalizeVideoDuration(
+  value: string | number,
+  settings: VideoGenSettings,
+): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return settings.duration.default;
+  const rounded = Math.round(parsed);
+  return Math.min(settings.duration.max, Math.max(settings.duration.min, rounded));
+}
+
+function readVideoDuration(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
+}
+
+function normalizeVideoResolution(value: string, settings: VideoGenSettings): string {
+  return settings.resolution.options.includes(value)
+    ? value
+    : settings.resolution.default;
+}
+
+function readVideoResolution(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value;
 }
 
 function readString(value: unknown): string | undefined {

@@ -93,9 +93,9 @@ class VideoGenRequest(BaseModel):
     images: list[VideoImageSlot] = []    # 参考图按 08 固定顺序排列
     ordered_content: list[VideoContentItem] = []  # 画布输入节点的真实混合顺序
     model: str | None = None
-    resolution: str | None = None        # 480p / 720p / 1080p
+    resolution: str | None = None
     ratio: str | None = None             # 16:9 / 9:16 / 1:1
-    duration: int | None = None          # 秒，≥4（与 segment ≤15 协同）
+    duration: int | None = None
     seed: int | None = None
     camera_fixed: bool | None = None
     generate_audio: bool | None = None
@@ -124,7 +124,7 @@ class VideoAdapter(ABC):
     async def poll(self, provider_task_id: str) -> VideoPollResult: ...
 ```
 
-> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。`ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影：它保留 text/image 混合顺序；`prompt/images` 继续作为结构化字段，便于 job 记录、校验和非多模态 adapter fallback。
+> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。`ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影：它保留 text/image 混合顺序；`prompt/images` 继续作为结构化字段，便于 job 记录、校验和非多模态 adapter fallback。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
 
 ## 3. routin 实现（`src/ai_drama/adapters/routin/`）
 

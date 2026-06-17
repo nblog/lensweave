@@ -130,9 +130,9 @@ class VideoGenRequest(BaseModel):
     images: list[VideoImageSlot] = Field(default_factory=list)
     ordered_content: list[VideoContentItem] = Field(default_factory=list)
     model: str | None = None
-    resolution: str | None = None  # 480p / 720p / 1080p
+    resolution: str | None = None
     ratio: str | None = None  # 16:9 / 9:16 / 1:1
-    duration: int | None = None  # seconds, >= 4
+    duration: int | None = None
     seed: int | None = None
     camera_fixed: bool | None = None
     generate_audio: bool | None = None

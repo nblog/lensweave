@@ -72,6 +72,8 @@ const zh = {
     pickSegment: "绑定 segment",
     targetSegment: "目标 segment",
     autoTargetSegment: "自动（单 segment 时使用本集 segment）",
+    videoDuration: "视频时长（秒）",
+    videoResolution: "分辨率",
     pickAsset: "引用资产",
     noBinding: "未绑定",
     noSegments: "本集还没有 segment，请先填入分镜。",

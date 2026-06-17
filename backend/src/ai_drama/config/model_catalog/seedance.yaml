@@ -34,7 +34,7 @@ models:
           min: 4
           max: 15
           step: 1
-          default: 5
+          default: 15
         params:
           prompt:
             maxLength: 2000
@@ -55,7 +55,7 @@ models:
           min: 4
           max: 15
           step: 1
-          default: 5
+          default: 15
         params:
           prompt:
             maxLength: 1000
@@ -80,7 +80,7 @@ models:
           min: 4
           max: 15
           step: 1
-          default: 5
+          default: 15
         params:
           prompt:
             maxLength: 2000
