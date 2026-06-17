@@ -324,8 +324,8 @@ class CanvasGraph(BaseModel):
 画布是"用户看到的形状"，适配器需要的是"有序的输入 + 参数"。编译以**适配器节点**为单位（ADR-006）：
 
 1. 选定一个适配器节点（如某个 `VIDEO_GEN`），回溯其所有入边。
-2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`，见 [08](../test/instructions/08_视频生成执行.md)）。顺序作用在适配器节点的多图输入口上。
-3. 按输入类型分流：`TEXT` 输入提供 prompt；`IMAGE` 输入提供参考图（来自 `ImageNode` 引用的 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
+2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`，见 [08](../test/instructions/08_视频生成执行.md)）。顺序首先作用在 adapter 的最终多模态 `content` 上，同时 `IMAGE` 输入也会投影成参考图列表。
+3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
 4. 编译产物是对应的 `TextGenRequest` / `ImageGenRequest` / `VideoGenRequest`（见 [02 适配层](02_adapter.md)），直接喂给对应 adapter。
 
 > 连线顺序即上下文顺序，是需求方的明确要求；`order` 字段是它的载体，在适配器节点处体现为"第 1 个接入、第 2 个接入…"的有序输入清单。编译规则把"自由 DAG"安全降维成"adapter 的结构化输入"，是 ADR-001/006 权衡里"约束护栏"的具体实现。

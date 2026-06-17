@@ -83,9 +83,15 @@ class VideoImageSlot(BaseModel):
     ref: str
     kind: VideoSlotKind = VideoSlotKind.REFERENCE
 
+class VideoContentItem(BaseModel):
+    type: Literal["text", "image"]
+    text: str | None = None
+    image: VideoImageSlot | None = None
+
 class VideoGenRequest(BaseModel):
     prompt: str
     images: list[VideoImageSlot] = []    # 参考图按 08 固定顺序排列
+    ordered_content: list[VideoContentItem] = []  # 画布输入节点的真实混合顺序
     model: str | None = None
     resolution: str | None = None        # 480p / 720p / 1080p
     ratio: str | None = None             # 16:9 / 9:16 / 1:1
@@ -118,7 +124,7 @@ class VideoAdapter(ABC):
     async def poll(self, provider_task_id: str) -> VideoPollResult: ...
 ```
 
-> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。
+> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。`ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影：它保留 text/image 混合顺序；`prompt/images` 继续作为结构化字段，便于 job 记录、校验和非多模态 adapter fallback。
 
 ## 3. routin 实现（`src/ai_drama/adapters/routin/`）
 
@@ -135,6 +141,8 @@ adapters/
 ```
 
 每个实现只做三件事：把 `*GenRequest` 翻译成 SDK 入参、调 SDK、把结果收敛回 `*GenResult`。PoC 脚本里的纯函数（如 [imagegen2.py](../test/imagegen2.py) 的 `_image_ref_to_content` / `_save_data_uri`、[videogen.py](../test/videogen.py) 的 `_build_content` / `_image_ref_to_url`）可直接搬进对应实现的私有方法，保留 PoC 已踩过的坑（如 Ark image content 必填 `role`、本地图内联为 base64 data URI）。
+
+工程版还要处理一个前后端边界：生成图片返回给前端的是浏览器预览 URL（如 `/images/xxx.png`），而图生图 / 图文生视频适配器需要的是可读本地文件或远端可访问 URL。因此 routin adapter 在真正组装 provider 请求前，会把后端自身的 `/images/...` 静态 URL 还原到 `outputs/images/...` 再内联为 data URI；不要把 `/images/...` 当作文件系统根目录路径。
 
 配置（base_url / api_key / 默认模型）从 pydantic-settings 注入，不再硬编码：
 
@@ -169,7 +177,7 @@ def get_video_adapter(channel: str = "routin") -> VideoAdapter: ...
 
 ## 5. 与上层的衔接
 
-- **CanvasGraph 编译产物**就是 `VideoGenRequest`（见 [01 §2.4](01_domain_model.md)）。画布的有序连线编译成 `images` 列表的固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`）。
+- **CanvasGraph 编译产物**就是 `VideoGenRequest`（见 [01 §2.4](01_domain_model.md)）。画布的有序连线编译成 `ordered_content` 的真实上下文顺序，并同步投影出 `images` 列表的固定参考图顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`）。
 - **pipeline 阶段**调对应 adapter：06 分镜用 `TextAdapter` 产 StoryboardJSON；04/05 资产用 `ImageAdapter`；08 用 `VideoAdapter`。
 - **异步落点**：`VideoAdapter.submit` 返回的 `provider_task_id` 存入 `GenerationJob`，由后端任务层轮询（见 [03 后端接口与任务](03_backend_api.md)）。
 
