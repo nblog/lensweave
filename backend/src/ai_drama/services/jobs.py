@@ -112,10 +112,10 @@ async def generate_text_job(
             **request.model_dump(mode="json"),
         },
     )
-    adapter = get_text_adapter(channel)
     job.status = JobStatus.RUNNING.value
     db.commit()
     try:
+        adapter = get_text_adapter(channel)
         result = await adapter.generate(request)
     except Exception as exc:  # noqa: BLE001
         logger.exception("text job %s failed for node %s", job.id, output_node_id)
@@ -149,11 +149,11 @@ async def generate_image_job(
             **request.model_dump(mode="json"),
         },
     )
-    adapter = get_image_adapter(channel)
     job.status = JobStatus.RUNNING.value
     db.commit()
     out = IMAGES_DIR / f"{episode_id}_{safe_node_id(output_node_id)}_{job.id}"
     try:
+        adapter = get_image_adapter(channel)
         result = await adapter.generate(request, out=out)
     except Exception as exc:  # noqa: BLE001
         logger.exception("image job %s failed for node %s", job.id, output_node_id)
