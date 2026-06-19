@@ -6,7 +6,7 @@ them by ``CanvasEdge.order``, and splits inputs by port type: TEXT inputs supply
 the prompt, IMAGE inputs supply ordered reference images (from an ImageNode's
 referenced Asset.image_path, or an upstream image product). The ordered images
 follow the 08 fixed reference order; character/scene/prop semantics ride on the
-referenced Asset.kind, not on node type.
+referenced project Asset.kind, not on node type.
 
 This is the concrete realization of ADR-001/006's "constraint guardrail": the
 frontend lets the user draw freely, and this compiler is where the graph is

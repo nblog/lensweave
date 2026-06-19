@@ -43,33 +43,32 @@ REST 风格，资源对齐领域模型。所有请求/响应体复用 [01 领域
 ```
 POST   /api/projects                      创建项目
 GET    /api/projects                      列表
-GET    /api/projects/{id}                 详情（含各阶段产出状态）
-POST   /api/projects/{id}/digest          运行 01 小说解读（输入小说原文）
-POST   /api/projects/{id}/plan            运行 02 剧集策划 → Bible + EpisodeMap
+GET    /api/projects/{project_uid}        详情（含各阶段产出状态）
+POST   /api/projects/{project_uid}/digest 运行 01 小说解读（输入小说原文）
+POST   /api/projects/{project_uid}/plan   运行 02 剧集策划 → Bible + EpisodeMap
 ```
 
-### 3.2 资产（全局库，ADR-005）
+`Project.id` 是数据库内部自增主键；对前端 URL/API path 暴露的是 `Project.uid`，创建项目与项目列表都会返回该字段。
 
-资产是全局的，不挂在项目路径下。项目通过关联端点引用全局资产。
+### 3.2 项目资产（ADR-005）
+
+资产挂在项目路径下。所有列表、创建、详情、删除都必须带 `project_uid`，画布编译生成请求时也按 episode 所属项目校验 `Asset.project_id`。
 
 ```
-GET    /api/assets                        全局资产列表（可按 ?kind= 过滤）
-POST   /api/assets                        创建全局资产（spec，可带 source_project_id）
-GET    /api/assets/{id}                    资产详情（含 image_path）
-POST   /api/assets/{id}/generate          触发 04/05 出图 → 返回 job
-
-GET    /api/projects/{id}/assets          某项目已引用的资产
-POST   /api/projects/{id}/assets/{asset_id}    项目引用一个全局资产（建关联）
-DELETE /api/projects/{id}/assets/{asset_id}    解除引用（不删全局资产）
+GET    /api/projects/{project_uid}/assets             项目资产列表（可按 ?kind= 过滤）
+POST   /api/projects/{project_uid}/assets             创建当前项目资产
+GET    /api/projects/{project_uid}/assets/{asset_id}  当前项目资产详情
+DELETE /api/projects/{project_uid}/assets/{asset_id}  删除当前项目资产
+POST   /api/projects/{project_uid}/assets/generate    触发 04/05 出图 → 返回 job（规划）
 ```
 
-> 资产的创建与生成在全局命名空间（`/api/assets`）；`/api/projects/{id}/assets` 仅管理项目↔资产的**引用关系**，对应 `ProjectAsset` 关联表。画布资产节点的 `ref_id` 指向全局 `Asset.id`。
+> 不提供 `/api/assets` 全局命名空间，也不提供项目↔资产关联端点。画布资产节点的 `ref_id` 指向 `Asset.id`，但该 id 只有在 `Asset.project_id == Episode.project_id` 时才可被编译进生成请求。
 
 ### 3.3 分集与画布
 
 ```
-GET    /api/projects/{id}/episodes        分集列表
-POST   /api/projects/{id}/episodes        创建分集（自动/手动分集，见下）
+GET    /api/projects/{project_uid}/episodes  分集列表
+POST   /api/projects/{project_uid}/episodes  创建分集（自动/手动分集，见下）
 POST   /api/episodes/{id}/script          运行 03 单集剧本
 POST   /api/episodes/{id}/storyboard      运行 06 分集分镜 → segments[]
 GET    /api/episodes/{id}/segments        segment 列表

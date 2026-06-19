@@ -10,16 +10,17 @@ canvas nodes, carries panel/clip paths, and runs its own generation job.
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import uuid4
 
 from sqlalchemy import (
     JSON,
-    Column,
     DateTime,
     ForeignKey,
     String,
-    Table,
     create_engine,
     func,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import (
     DeclarativeBase,
@@ -36,22 +37,20 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
-# Project ↔ Asset many-to-many association (ADR-005): assets are global and a
-# project references them rather than owning them.
-project_asset = Table(
-    "project_asset",
-    Base.metadata,
-    Column("project_id", ForeignKey("project.id"), primary_key=True),
-    Column("asset_id", ForeignKey("asset.id"), primary_key=True),
-)
+def generate_project_uid() -> str:
+    """Generate a stable public project identifier for URLs/API paths."""
+    return uuid4().hex
 
 
 class Project(Base):
-    """A single drama production. Owns episodes; references global assets."""
+    """A single drama production. Owns episodes and its private assets."""
 
     __tablename__ = "project"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(
+        String(32), unique=True, index=True, default=generate_project_uid
+    )
     title: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -61,7 +60,7 @@ class Project(Base):
     episode_map: Mapped[dict | None] = mapped_column(JSON, default=None)
 
     assets: Mapped[list["Asset"]] = relationship(
-        secondary=project_asset, back_populates="projects"
+        back_populates="project", cascade="all, delete-orphan"
     )
     episodes: Mapped[list["Episode"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
@@ -69,29 +68,20 @@ class Project(Base):
 
 
 class Asset(Base):
-    """A global visual asset (character / prop / scene); 04/05 output (ADR-005).
-
-    Not owned by any project — referenced via the ``project_asset`` association.
-    ``source_project_id`` records which project's 02 Bible first generated it
-    (nullable for hand-created global assets).
-    """
+    """A project-owned visual asset (character / prop / scene); 04/05 output."""
 
     __tablename__ = "asset"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), index=True)
     kind: Mapped[str] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(default=None)
     spec: Mapped[dict] = mapped_column(JSON, default=dict)
     image_path: Mapped[str | None] = mapped_column(default=None)
-    source_project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("project.id"), default=None
-    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    projects: Mapped[list["Project"]] = relationship(
-        secondary=project_asset, back_populates="assets"
-    )
+    project: Mapped["Project"] = relationship(back_populates="assets")
 
 
 class Episode(Base):
@@ -191,3 +181,135 @@ def init_db() -> None:
     Replaced by Alembic migrations in a later milestone (docs/05_roadmap.md).
     """
     Base.metadata.create_all(engine)
+    _ensure_project_uid_column()
+    _ensure_asset_project_column()
+
+
+def _ensure_project_uid_column() -> None:
+    """Backfill the public project UID column for pre-UID SQLite databases."""
+    inspector = inspect(engine)
+    if not inspector.has_table("project"):
+        return
+
+    column_names = {col["name"] for col in inspector.get_columns("project")}
+    with engine.begin() as conn:
+        if "uid" not in column_names:
+            conn.execute(text("ALTER TABLE project ADD COLUMN uid VARCHAR(32)"))
+
+        rows = conn.execute(
+            text("SELECT id FROM project WHERE uid IS NULL OR uid = ''")
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                text("UPDATE project SET uid = :uid WHERE id = :id"),
+                {"uid": generate_project_uid(), "id": row.id},
+            )
+
+        conn.execute(
+            text("CREATE UNIQUE INDEX IF NOT EXISTS ix_project_uid ON project (uid)")
+        )
+
+
+def _ensure_asset_project_column() -> None:
+    """Migrate pre-project-owned SQLite assets to the current ownership model."""
+    inspector = inspect(engine)
+    if not inspector.has_table("asset"):
+        return
+
+    asset_columns = {col["name"] for col in inspector.get_columns("asset")}
+    had_project_id = "project_id" in asset_columns
+
+    with engine.begin() as conn:
+        if not had_project_id:
+            conn.execute(text("ALTER TABLE asset ADD COLUMN project_id INTEGER"))
+
+            if "source_project_id" in asset_columns:
+                conn.execute(
+                    text(
+                        """
+                        UPDATE asset
+                        SET project_id = source_project_id
+                        WHERE project_id IS NULL
+                          AND source_project_id IS NOT NULL
+                          AND EXISTS (
+                            SELECT 1 FROM project
+                            WHERE project.id = asset.source_project_id
+                          )
+                        """
+                    )
+                )
+
+            if inspector.has_table("project_asset"):
+                # Old global assets could be referenced by multiple projects.
+                # Keep the original row for one project and clone it for the
+                # additional references so each project now owns an independent
+                # asset row.
+                links = conn.execute(
+                    text(
+                        """
+                        SELECT pa.project_id, pa.asset_id
+                        FROM project_asset pa
+                        JOIN project p ON p.id = pa.project_id
+                        JOIN asset a ON a.id = pa.asset_id
+                        ORDER BY pa.asset_id, pa.project_id
+                        """
+                    )
+                ).mappings()
+
+                for link in links:
+                    row = (
+                        conn.execute(
+                            text(
+                                """
+                            SELECT id, kind, name, description, spec, image_path,
+                                   created_at, project_id
+                            FROM asset
+                            WHERE id = :asset_id
+                            """
+                            ),
+                            {"asset_id": link["asset_id"]},
+                        )
+                        .mappings()
+                        .first()
+                    )
+                    if row is None:
+                        continue
+                    if row["project_id"] is None:
+                        conn.execute(
+                            text(
+                                "UPDATE asset SET project_id = :project_id "
+                                "WHERE id = :asset_id"
+                            ),
+                            {
+                                "project_id": link["project_id"],
+                                "asset_id": link["asset_id"],
+                            },
+                        )
+                    elif row["project_id"] != link["project_id"]:
+                        conn.execute(
+                            text(
+                                """
+                                INSERT INTO asset (
+                                  project_id, kind, name, description, spec,
+                                  image_path, created_at
+                                )
+                                VALUES (
+                                  :project_id, :kind, :name, :description, :spec,
+                                  :image_path, :created_at
+                                )
+                                """
+                            ),
+                            {
+                                "project_id": link["project_id"],
+                                "kind": row["kind"],
+                                "name": row["name"],
+                                "description": row["description"],
+                                "spec": row["spec"],
+                                "image_path": row["image_path"],
+                                "created_at": row["created_at"],
+                            },
+                        )
+
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_asset_project_id ON asset (project_id)")
+        )

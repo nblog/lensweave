@@ -2,7 +2,7 @@
 
 前端的定位（来自需求方）：**控制用户的使用途径，约束其不越出 core 的边界，并提供数据展示与数据交互的 UX/UI。** 它不持有业务规则——规则在后端 schema 里；前端的任务是把这些规则翻译成"用户点不出错"的界面，并把 pipeline 的结构化产物可视化。
 
-技术栈：TypeScript + React + Vite，i18n 用 react-i18next（中/英，首屏即生效），画布用 React Flow（`@xyflow/react`），服务端态用 TanStack Query、画布本地态用 Zustand。
+技术栈：TypeScript + React + Vite，路由用 React Router，i18n 用 react-i18next（中/英，首屏即生效），画布用 React Flow（`@xyflow/react`），服务端态用 TanStack Query、画布本地态用 Zustand。
 
 ---
 
@@ -33,50 +33,56 @@ src/i18n/
 
 ## 2. 页面流（对齐需求方描述的使用路径）
 
-资产是**全局库**（ADR-005），与项目平级，不在项目内创建。顶层有两个并列入口：项目、全局资产库。
+资产是**项目私有资源**（ADR-005），不作为顶层全局库存在。顶层入口是项目；进入项目后，左侧承载本系列分集列表与阶段导航，右侧显示当前阶段页面内容。
+
+页面流由 URL 路由承载，而不是用全局 nav/store 模拟页面状态：`/projects` 是项目列表，`/projects/:projectUid` 是项目工作台，`/projects/:projectUid/episodes/:episodeId/workshop` 是 EP 工坊。`projectUid` 来自后端 `Project.uid`，不使用数据库自增 `id`。项目工作台内部的剧本/资产 stage 是本页状态；涉及具体分集画布时再进入真实路由。
 
 ```
-顶栏导航： [项目]   [全局资产库]   ………………………… [语言切换]
-            │            │
-            ▼            ▼
-   ┌─────────────┐  ┌──────────────────┐
-   │ 项目列表     │  │ 全局资产库         │
-   │ [创建项目]   │  │ 人物 / 道具 / 场景  │
-   └─────────────┘  │ 独立维护，可被任意   │
-            │        │ 项目引用           │
-            ▼        └──────────────────┘
-      打开某个项目
-            │   ← 项目内只有「分集」，没有资产区
-            ▼
-      [剧情分集]  自动分集 / 手动分集 → EP01 EP02 ...
+顶栏导航： [项目]   ………………………………………… [语言切换]
             │
-            ▼  进入某一集 EPXX
+            ▼
+   ┌─────────────┐
+   │ 项目列表     │
+   │ [创建项目]   │
+   └─────────────┘
+            │
+      打开某个项目
+            ▼
+   ┌──────────────────────────────────────────────┐
+   │ 左侧：本系列分集 + stage 导航                 │
+   │  ├─ 剧本                                      │
+   │  ├─ 资产                                      │ ← 当前项目私有资产
+   │  └─ 工坊（进入某一集 EPXX）                   │
+   │ 右侧：当前 stage 的页面内容                   │
+   └──────────────────────────────────────────────┘
+            │  进入某一集 EPXX
+            ▼
    ┌──────────────────┐
-   │   EP 工坊画布      │  ← 本系统的核心交互；从全局库引用资产入画
+   │   EP 工坊画布      │  ← 本系统的核心交互；只引用当前项目资产
    └──────────────────┘
 ```
 
-### 2.1 顶层导航（项目 / 全局资产库）
+### 2.1 顶层导航（项目）
 
-顶栏提供"项目"与"全局资产库"两个并列入口。资产先于项目存在、独立维护——这是 ADR-005 的直接体现：用户可以先把人物 / 道具 / 场景资产建好，再在任意项目里引用它们。
+顶栏提供"项目"入口与语言切换。资产不在顶层出现，避免用户误以为素材可跨项目共享；资产管理进入项目后在项目工作台右侧完成。
 
 ### 2.2 创建项目（项目入口首屏）
 
 "项目"入口显示项目列表与"创建项目"。创建完成后进入项目页。对应 `POST /api/projects`。
 
-### 2.3 项目页：只有「分集」
+### 2.3 项目页：左侧导航 + 右侧页面
 
-创建项目后，项目页**只展示分集**，没有资产区（资产在全局库管理）。分集支持两种方式（对应 [03 §3.3](03_backend_api.md) 的 `mode`）：
+创建项目后，项目页采用白色工作台布局：左侧是一个容器，包含 `series-panel`（本系列分集列表与添加分集入口）和 `project-stage-panel`（剧本 / 资产 / 工坊阶段导航）；右侧 `project-page-panel` 显示当前 stage 的页面内容，不重复左侧分集列表。`series-panel` 里的分集是**当前分集选择器**，点击 EP01 / EP02 只更新项目工作台当前分集，不直接进入画布；下面的"工坊"入口才按当前选中分集进入 `/projects/:projectUid/episodes/:episodeId/workshop`。分集支持两种方式（对应 [03 §3.3](03_backend_api.md) 的 `mode`）：
 - **自动分集**：调 01→02 产出 EpisodeMap，按"一句话主线"一行一集自动切。
 - **手动分集**：用户自己划定集边界。
 
 两者都落成 `Episode` 列表。手动添加分集的表单只要求填写 `标题`，不在创建 EP 时询问时长；具体生成视频片段的时长由 EP 工坊里的 `VideoGenNode` 参数控制。后端不维护 Episode 固定总时长字段，segment 的数量与切分由后续 06 分镜阶段决定。
 
-### 2.4 全局资产库（独立入口）
+### 2.4 项目资产页
 
-独立页面管理全局资产（人物 / 道具 / 场景）。资产卡片的形态与画布 `ImageNode` 对齐，复用同一个 `ImagePreviewFrame`（左上角 TAG = 资产类型、右上角上传、左下角放大预览）：**上传图像 → 预览 → 打标签（人物/道具/场景）→ 填名称（必填）+ 描述（可选）→ 保存**，上传走与 ImageNode 共用的 `readImageAsDataUri`（`src/utils/image.ts`）读成 data URI，存入 `Asset.image_path`（语义即"图像 URI"，画布节点 `ImageNode` 引用该字段绑定数据）。不再提供"参考图路径 / URL"文本输入——图像统一由上传产生。资产可删除（`DELETE /api/assets/{id}`，删除前弹确认；后端会先解除其与项目的引用关系再删行）。每个资产仍可触发 04/05 出图回填，`source_project_id` 记录来源项目（若由某项目 Bible 生成）。资产是画布节点的来源；EP 工坊从全局库引用资产入画。
+项目页右侧的资产 stage 是**展示型资产库**，只展示当前项目已有资产（人物 / 道具 / 场景），不在这里创建、上传、删除或触发生成。布局参考"固定资产 / 临时资产 + 类型筛选 + 分组卡片"：顶部显示固定资产与临时资产切换（当前只启用固定资产），再按全部 / 角色 / 场景 / 道具过滤；内容区按资产类型分组展示卡片。卡片显示资产图、名称、类型、出场次数占位与描述；无图资产显示"暂无形象 / 待补图"占位。资产是画布 `ImageNode` 的来源；EP 工坊只从当前项目资产列表选择引用。
 
-> 破坏性 / 难撤销操作统一走 `src/components/ConfirmDialog.tsx` 的 `useConfirm()`（返回 `Promise<boolean>`）：删除资产、覆盖已有上传图像、删除画布节点都 `await confirm(...)`，护栏一致且 DRY。覆盖确认内建在共享的 `ImagePreviewFrame` 里，资产库与画布 ImageNode 两处一致生效。
+> 破坏性 / 难撤销操作统一走 `src/components/ConfirmDialog.tsx` 的 `useConfirm()`（返回 `Promise<boolean>`）：删除画布节点、覆盖已有上传图像等操作都 `await confirm(...)`，护栏一致且 DRY。资产展示页不提供破坏性操作。
 
 > 时间戳显示（创建于 / 上次保存 / 生成于）统一走 `src/utils/datetime.ts` 的 `formatTimestamp`（`YYYY-MM-DD HH:mm`），画布内的 `formatCanvasTimestamp` 是其薄封装，避免同一概念散落多套格式。
 
@@ -86,14 +92,14 @@ src/i18n/
 
 ### 3.1 节点类型（通用计算图，ADR-006）
 
-对齐 [01 §2.3](01_domain_model.md) 的 `NodeKind`。节点分两类：**数据节点**（承载值）与**适配器节点**（一次生成，1:1 对应三个 adapter）。人物/道具/场景不再是节点类型，由 `ImageNode` 引用的全局 `Asset.kind` 承载。
+对齐 [01 §2.3](01_domain_model.md) 的 `NodeKind`。节点分两类：**数据节点**（承载值）与**适配器节点**（一次生成，1:1 对应三个 adapter）。人物/道具/场景不再是节点类型，由 `ImageNode` 引用的当前项目 `Asset.kind` 承载。
 
 数据节点：
 
 | 节点 | 输出类型 | 来源 / 内容 |
 |---|---|---|
 | 文本（TextNode） | text | 手填文本，或绑定 segment 的 `visual_prompt`（`ref_id`→Segment） |
-| 图像（ImageNode） | image | 引用全局资产（`ref_id`→Asset，含人物/道具/场景语义），或上游生成产物 |
+| 图像（ImageNode） | image | 引用当前项目资产（`ref_id`→Asset，含人物/道具/场景语义），或上游生成产物 |
 | 视频（VideoNode） | video | 上游 VideoGen 的产物 |
 
 适配器节点（有类型化输入口 + 一个输出口）：
@@ -117,7 +123,7 @@ src/i18n/
 
 ### 3.3 右侧节点编辑面板
 
-选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的全局资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
+选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前项目资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。`ImageGenNode` 的生成图双击打开完整预览，左下角收藏按钮打开"保存为项目资产"模态窗；该模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ### 3.4 前端即护栏：端口类型校验
 
@@ -137,7 +143,7 @@ src/i18n/
 
 ### 3.6 触发生成与播放
 
-适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点上实时显示 `queued/running/succeeded` 状态与进度，成功后产物回填到当前生成节点并可内嵌播放。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
+适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点卡片上实时显示 `queued/running/succeeded` 状态、生成中 loading 覆盖层与已用时间，成功后产物回填到当前生成节点并可内嵌播放。图像生成产物可从节点卡片收藏为当前项目资产，提交 `POST /api/projects/{project_uid}/assets` 并刷新项目资产查询。任务结束后把最终耗时写入 `CanvasNode.data.generation_elapsed_ms`，刷新画布后仍能看到上次生成用时。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
 
 ## 4. 状态管理
 
@@ -146,6 +152,7 @@ src/i18n/
 | 服务端态 | TanStack Query | 项目/资产/分集/job，带缓存与轮询 |
 | 画布本地态 | Zustand | 节点位置、选中、未保存的连线编辑 |
 | 语言偏好 | localStorage | i18n 选择 |
+| 生成通道偏好 | localStorage | EP 工坊通道下拉（mock/routin） |
 
 画布"保存"显式调 `PUT /canvas` 持久化；本地编辑先进 Zustand，避免每次拖拽都打后端。
 

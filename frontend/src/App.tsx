@@ -1,75 +1,107 @@
-/** Root layout: top bar with title, nav (projects / asset library), and language
- * switcher; a view switch driven by the nav store (docs/04 §2). A real router
- * arrives with more pages. */
+/** Root layout and URL routes for the page flow in docs/04 §2. */
 import { useTranslation } from "react-i18next";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Clapperboard, FolderKanban } from "lucide-react";
+import {
+  Link,
+  Navigate,
+  NavLink,
+  Route,
+  Routes,
+  useMatch,
+  useParams,
+} from "react-router-dom";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
-import { AssetLibraryPage } from "./pages/AssetLibraryPage";
 import { CanvasWorkshop } from "./pages/CanvasWorkshop";
-import { useNav } from "./store/nav";
 import "./App.css";
 
 function App() {
   const { t } = useTranslation();
-  const view = useNav((s) => s.view);
-  const goProjects = useNav((s) => s.goProjects);
-  const goAssets = useNav((s) => s.goAssets);
-  const goProject = useNav((s) => s.goProject);
+  const projectMatch = useMatch("/projects/:projectUid");
+  const workshopMatch = useMatch(
+    "/projects/:projectUid/episodes/:episodeId/workshop",
+  );
 
-  const isWorkshop = view.name === "workshop";
-  // Active top-level tab (project/workshop both fall under "projects").
-  const activeTab = view.name === "assets" ? "assets" : "projects";
+  const backTo = workshopMatch
+    ? `/projects/${workshopMatch.params.projectUid}`
+    : "/projects";
+  const showBack = Boolean(projectMatch || workshopMatch);
 
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand">
-          <h1>{t("app.title")}</h1>
-          <p className="subtitle">{t("app.subtitle")}</p>
+        <div className="topbar-inner">
+          <Link className="brand" to="/projects" aria-label={t("app.title")}>
+            <span className="brand-mark">
+              <Clapperboard size={20} aria-hidden />
+            </span>
+            <span className="brand-copy">
+              <h1>{t("app.title")}</h1>
+              <p className="subtitle">{t("app.subtitle")}</p>
+            </span>
+          </Link>
+          <div className="topbar-actions">
+            <nav className="topnav" aria-label={t("nav.projects")}>
+              <NavLink
+                to="/projects"
+                className={({ isActive }) =>
+                  isActive ? "navlink active" : "navlink"
+                }
+              >
+                <FolderKanban size={16} aria-hidden />
+                <span>{t("nav.projects")}</span>
+              </NavLink>
+            </nav>
+            <LanguageSwitcher />
+          </div>
         </div>
-        <nav className="topnav">
-          <button
-            className={activeTab === "projects" ? "navlink active" : "navlink"}
-            onClick={goProjects}
-          >
-            {t("nav.projects")}
-          </button>
-          <button
-            className={activeTab === "assets" ? "navlink active" : "navlink"}
-            onClick={goAssets}
-          >
-            {t("nav.assets")}
-          </button>
-        </nav>
-        <LanguageSwitcher />
       </header>
 
-      <main className={isWorkshop ? "content content-wide" : "content"}>
-        {(view.name === "project" || view.name === "workshop") && (
-          <button
-            className="back-btn"
-            onClick={() =>
-              view.name === "workshop"
-                ? goProject(view.projectId)
-                : goProjects()
-            }
-          >
+      <main className={workshopMatch ? "content content-wide" : "content"}>
+        {showBack && (
+          <Link className="back-btn" to={backTo}>
             <ArrowLeft size={16} aria-hidden />
             {t("app.back")}
-          </button>
+          </Link>
         )}
 
-        {view.name === "projects" && <ProjectsPage />}
-        {view.name === "assets" && <AssetLibraryPage />}
-        {view.name === "project" && <ProjectPage projectId={view.projectId} />}
-        {view.name === "workshop" && (
-          <CanvasWorkshop projectId={view.projectId} episodeId={view.episodeId} />
-        )}
+        <Routes>
+          <Route path="/" element={<Navigate to="/projects" replace />} />
+          <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:projectUid" element={<ProjectRoute />} />
+          <Route
+            path="/projects/:projectUid/episodes/:episodeId/workshop"
+            element={<WorkshopRoute />}
+          />
+          <Route path="*" element={<Navigate to="/projects" replace />} />
+        </Routes>
       </main>
     </div>
   );
+}
+
+function ProjectRoute() {
+  const { projectUid } = useParams();
+  if (!projectUid) return <Navigate to="/projects" replace />;
+  return <ProjectPage projectUid={projectUid} />;
+}
+
+function WorkshopRoute() {
+  const { projectUid, episodeId } = useParams();
+  const parsedEpisodeId = parseRouteNumber(episodeId);
+  if (!projectUid || parsedEpisodeId == null) {
+    return <Navigate to="/projects" replace />;
+  }
+  return (
+    <CanvasWorkshop projectUid={projectUid} episodeId={parsedEpisodeId} />
+  );
+}
+
+function parseRouteNumber(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
 export default App;

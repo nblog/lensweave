@@ -1,16 +1,18 @@
 /**
  * Shared image frame used by both the canvas ImageNode (docs/04 §3.3) and the
- * global asset library (§2.4): a fixed-ratio thumbnail with corner controls —
- * an optional kind TAG (top-left), upload (top-right), full-preview/zoom
- * (bottom-left), and an optional retry (bottom-right). Replacing an existing
+ * project asset panel (§2.4): a fixed-ratio thumbnail with corner controls —
+ * an optional kind TAG (top-left), upload (top-right), a configurable
+ * bottom-left action, and an optional retry (bottom-right). Replacing an existing
  * image asks for confirmation here, so the overwrite guardrail is consistent
  * everywhere the frame is used.
  */
 import { useTranslation } from "react-i18next";
-import { Maximize2, RotateCw, Upload } from "lucide-react";
+import { Maximize2, RotateCw, Star, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import { useConfirm } from "./confirm-context";
 import { ACCEPTED_IMAGE_TYPES, readImageAsDataUri } from "../utils/image";
+
+type PreviewTrigger = "button" | "doubleClick";
 
 export function ImagePreviewFrame({
   src,
@@ -18,8 +20,10 @@ export function ImagePreviewFrame({
   className,
   tag,
   onPreview,
+  previewTrigger = "button",
   onUpload,
   onRetry,
+  onFavorite,
   retryDisabled = false,
 }: {
   src?: string;
@@ -28,8 +32,10 @@ export function ImagePreviewFrame({
   /** Optional badge rendered in the top-left corner (e.g. asset kind tag). */
   tag?: ReactNode;
   onPreview: (src: string, title: string) => void;
+  previewTrigger?: PreviewTrigger;
   onUpload?: (imageUri: string) => void;
   onRetry?: () => void;
+  onFavorite?: () => void;
   retryDisabled?: boolean;
 }) {
   const { t } = useTranslation();
@@ -50,14 +56,29 @@ export function ImagePreviewFrame({
   };
 
   return (
-    <div className={`node-media-frame ${className ?? ""}`}>
+    <div
+      className={`node-media-frame ${
+        previewTrigger === "doubleClick" && src ? "node-media-frame-dbl-preview " : ""
+      }${className ?? ""}`}
+      title={
+        previewTrigger === "doubleClick" && src
+          ? t("canvas.doubleClickPreview")
+          : undefined
+      }
+      onDoubleClick={(e) => {
+        if (!src || previewTrigger !== "doubleClick") return;
+        e.stopPropagation();
+        onPreview(src, alt);
+      }}
+    >
       {src ? <img src={src} alt={alt} /> : <span>{t("canvas.noPreview")}</span>}
       {tag && <span className="node-media-tag">{tag}</span>}
-      {src && (
+      {src && previewTrigger === "button" && (
         <button
           className="node-preview nodrag"
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onPreview(src, alt);
@@ -68,12 +89,29 @@ export function ImagePreviewFrame({
           <Maximize2 size={14} aria-hidden />
         </button>
       )}
+      {src && onFavorite && (
+        <button
+          className="node-favorite nodrag"
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onFavorite();
+          }}
+          title={t("assets.addFromGenerated")}
+          aria-label={t("assets.addFromGenerated")}
+        >
+          <Star size={14} aria-hidden />
+        </button>
+      )}
       {onUpload && (
         <label
           className="node-upload nodrag"
           title={t("canvas.uploadImage")}
           aria-label={t("canvas.uploadImage")}
           onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
         >
           <input
             type="file"
@@ -93,6 +131,7 @@ export function ImagePreviewFrame({
           disabled={retryDisabled}
           type="button"
           onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onRetry();

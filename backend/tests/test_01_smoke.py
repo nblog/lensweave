@@ -20,14 +20,15 @@ def test_project_crud(client) -> None:
     project = created.json()
     assert project["title"] == "赘婿翻身"
     assert project["id"] >= 1
+    assert project["uid"]
 
     listed = client.get("/api/projects")
     assert listed.status_code == 200
-    assert any(p["id"] == project["id"] for p in listed.json())
+    assert any(p["uid"] == project["uid"] for p in listed.json())
 
-    fetched = client.get(f"/api/projects/{project['id']}")
+    fetched = client.get(f"/api/projects/{project['uid']}")
     assert fetched.status_code == 200
     assert fetched.json()["title"] == "赘婿翻身"
 
-    missing = client.get("/api/projects/999999")
+    missing = client.get("/api/projects/not-a-real-project-uid")
     assert missing.status_code == 404

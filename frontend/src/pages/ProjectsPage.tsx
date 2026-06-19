@@ -7,14 +7,14 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
-import { useNav } from "../store/nav";
 import { formatTimestamp } from "../utils/datetime";
 
 export function ProjectsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const goProject = useNav((s) => s.goProject);
+  const navigate = useNavigate();
   const [showForm, setShowForm] = useState(false);
   const [title, setTitle] = useState("");
 
@@ -22,10 +22,11 @@ export function ProjectsPage() {
 
   const createProject = useMutation({
     mutationFn: (newTitle: string) => api.createProject(newTitle),
-    onSuccess: () => {
+    onSuccess: (project) => {
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
       setTitle("");
       setShowForm(false);
+      navigate(`/projects/${project.uid}`);
     },
   });
 
@@ -84,9 +85,9 @@ export function ProjectsPage() {
                   {t("projects.createdAt")}: {formatTimestamp(p.created_at)}
                 </span>
               </div>
-              <button className="primary" onClick={() => goProject(p.id)}>
+              <Link className="primary action-link" to={`/projects/${p.uid}`}>
                 {t("projects.open")}
-              </button>
+              </Link>
             </li>
           ))}
         </ul>

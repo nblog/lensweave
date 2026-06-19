@@ -9,6 +9,7 @@ export const BASE_URL =
 
 export interface Project {
   id: number;
+  uid: string;
   title: string;
   created_at: string;
 }
@@ -17,12 +18,12 @@ export type AssetKind = "character" | "prop" | "scene";
 
 export interface Asset {
   id: number;
+  project_id: number;
   kind: AssetKind;
   name: string;
   description: string | null;
   spec: Record<string, unknown>;
   image_path: string | null;
-  source_project_id: number | null;
   created_at: string;
 }
 
@@ -146,53 +147,49 @@ export const api = {
 
   // projects
   listProjects: () => request<Project[]>("/api/projects"),
+  getProject: (projectUid: string) =>
+    request<Project>(`/api/projects/${projectUid}`),
   createProject: (title: string) =>
     request<Project>("/api/projects", {
       method: "POST",
       body: JSON.stringify({ title }),
     }),
 
-  // assets (global library, ADR-005)
-  listAssets: (kind?: AssetKind) =>
-    request<Asset[]>(`/api/assets${kind ? `?kind=${kind}` : ""}`),
-  createAsset: (body: {
-    kind: AssetKind;
-    name: string;
-    description?: string | null;
-    image_path?: string | null;
-    source_project_id?: number | null;
-  }) =>
-    request<Asset>("/api/assets", {
+  // project-owned assets
+  listProjectAssets: (projectUid: string, kind?: AssetKind) =>
+    request<Asset[]>(
+      `/api/projects/${projectUid}/assets${kind ? `?kind=${kind}` : ""}`,
+    ),
+  createProjectAsset: (
+    projectUid: string,
+    body: {
+      kind: AssetKind;
+      name: string;
+      description?: string | null;
+      image_path?: string | null;
+    },
+  ) =>
+    request<Asset>(`/api/projects/${projectUid}/assets`, {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  deleteAsset: (assetId: number) =>
-    fetch(`${BASE_URL}/api/assets/${assetId}`, { method: "DELETE" }).then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    }),
-  listProjectAssets: (projectId: number) =>
-    request<Asset[]>(`/api/projects/${projectId}/assets`),
-  linkProjectAsset: (projectId: number, assetId: number) =>
-    fetch(`${BASE_URL}/api/projects/${projectId}/assets/${assetId}`, {
-      method: "POST",
-    }).then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    }),
-  unlinkProjectAsset: (projectId: number, assetId: number) =>
-    fetch(`${BASE_URL}/api/projects/${projectId}/assets/${assetId}`, {
+  deleteProjectAsset: (projectUid: string, assetId: number) =>
+    fetch(`${BASE_URL}/api/projects/${projectUid}/assets/${assetId}`, {
       method: "DELETE",
     }).then((r) => {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
     }),
+  getProjectAsset: (projectUid: string, assetId: number) =>
+    request<Asset>(`/api/projects/${projectUid}/assets/${assetId}`),
 
   // episodes
-  listEpisodes: (projectId: number) =>
-    request<Episode[]>(`/api/projects/${projectId}/episodes`),
+  listEpisodes: (projectUid: string) =>
+    request<Episode[]>(`/api/projects/${projectUid}/episodes`),
   createEpisode: (
-    projectId: number,
+    projectUid: string,
     body: { episode_no: number; title: string },
   ) =>
-    request<Episode>(`/api/projects/${projectId}/episodes`, {
+    request<Episode>(`/api/projects/${projectUid}/episodes`, {
       method: "POST",
       body: JSON.stringify(body),
     }),

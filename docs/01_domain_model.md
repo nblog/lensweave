@@ -9,16 +9,14 @@
 ## 1. 实体关系总览
 
 ```
-Asset (全局视觉资产：人物/道具/场景，ADR-005)   ★不隶属任何项目
- ├─ source_project_id  可空，记录最初由哪个项目的 02 Bible 生成（可追源）
- └─ image_path         生成的参考图（04/05 产出）
-
 Project (一部剧)
+ ├─ uid                稳定公开标识，用于 URL / API project path，不暴露自增 id
  ├─ StoryDigest        1:1   故事摘要（01 产出）
  ├─ CharacterBible     1:1   人物圣经（02 产出）
  ├─ WorldBible         1:1   世界圣经（02 产出）
  ├─ EpisodeMap         1:1   分集总表（02 产出）
- ├─ ProjectAsset       N:M   ←→ Asset  项目按引用关联全局资产（关联表）
+ ├─ Asset              1:N   项目私有视觉资产（人物/道具/场景）
+ │   └─ image_path           生成的参考图（04/05 产出）
  └─ Episode            1:N   分集
      ├─ EpisodeScript  1:1   单集剧本（03 产出）
      ├─ Storyboard     1:1   分集分镜 JSON（06 产出）
@@ -32,7 +30,7 @@ Project (一部剧)
 GenerationJob          独立表，异步任务状态（ADR-003），可挂在任意可生成实体上
 ```
 
-**资产全局化**（ADR-005）：`Asset` 是顶层实体，不挂在 `Project` 下。项目通过 `ProjectAsset` 关联表多对多引用资产——同一资产可被多个项目共享，删除项目不删资产。`Asset.source_project_id` 可空，用于追溯它最初由哪个项目的 02 CharacterBible/WorldBible 生成；02→04/05 的出图产物发布到全局库并填此字段，而非写入项目私有列表。画布节点的资产节点其 `ref_id` 指向全局 `Asset.id`。
+**资产项目化**（ADR-005）：`Asset` 通过 `project_id` 隶属于单个 `Project`。项目资产只能在所属项目内列表、删除、被画布 `ImageNode.ref_id` 引用；service 层在编译生成请求时会按 episode 的 `project_id` 校验资产归属，防止跨项目误用。02→04/05 的出图产物写入当前项目资产，而不是发布到全局库。
 
 **Segment 边界**：`Episode 1:N Segment` 是为未来逐段出片保留的结构关系。当前阶段不要求 `Episode` 预设固定总时长，也不从总时长推导 segment 数量；`Segment.duration_sec` 只表达单段视频的建议长度，默认 15s，并保留 `≤15s` 的单段硬上限。
 
@@ -262,7 +260,7 @@ class CanvasNode(BaseModel):
     """对应 Node 继承体系的扁平 DTO（kind 区分子类型）。
 
     基类语义：每个节点都有 id / name / position / data。``ref_id`` 让
-    ImageNode 引用全局 Asset（人物/道具/场景语义由 Asset.kind 承载），或让
+    ImageNode 引用当前项目 Asset（人物/道具/场景语义由 Asset.kind 承载），或让
     内容型 TextNode 绑定某个 Segment。
     """
     id: str
@@ -313,7 +311,7 @@ class CanvasGraph(BaseModel):
 
 1. 选定一个适配器节点（如某个 `VIDEO_GEN`），回溯其所有入边。
 2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`，见 [08](../test/instructions/08_视频生成执行.md)）。顺序首先作用在 adapter 的最终多模态 `content` 上，同时 `IMAGE` 输入也会投影成参考图列表。
-3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
+3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的当前项目 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
 4. 编译产物是对应的 `TextGenRequest` / `ImageGenRequest` / `VideoGenRequest`（见 [02 适配层](02_adapter.md)），直接喂给对应 adapter。
 
 > 连线顺序即上下文顺序，是需求方的明确要求；`order` 字段是它的载体，在适配器节点处体现为"第 1 个接入、第 2 个接入…"的有序输入清单。编译规则把"自由 DAG"安全降维成"adapter 的结构化输入"，是 ADR-001/006 权衡里"约束护栏"的具体实现。
@@ -329,6 +327,7 @@ class Base(DeclarativeBase): ...
 class Project(Base):
     __tablename__ = "project"
     id: Mapped[int] = mapped_column(primary_key=True)
+    uid: Mapped[str] = mapped_column(unique=True, index=True)  # URL/API 用公开稳定标识
     title: Mapped[str]
     created_at: Mapped[datetime] = mapped_column(default=func.now())
     # 1:1 阶段产出以 JSON 列内联（前期），或拆独立表（后期）
@@ -336,34 +335,20 @@ class Project(Base):
     character_bible: Mapped[dict | None] = mapped_column(JSON, default=None)
     world_bible: Mapped[dict | None] = mapped_column(JSON, default=None)
     episode_map: Mapped[dict | None] = mapped_column(JSON, default=None)
-    # 资产是全局的（ADR-005）：项目通过 ProjectAsset 关联表引用，多对多
-    assets: Mapped[list["Asset"]] = relationship(
-        secondary="project_asset", back_populates="projects"
-    )
+    assets: Mapped[list["Asset"]] = relationship(back_populates="project")
     episodes: Mapped[list["Episode"]] = relationship(back_populates="project")
 
 class Asset(Base):
-    """全局视觉资产（ADR-005）。不隶属任何项目，可被多个项目引用。"""
+    """项目私有视觉资产（ADR-005）。"""
     __tablename__ = "asset"
     id: Mapped[int] = mapped_column(primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), index=True)
     kind: Mapped[str]                       # AssetKind
     name: Mapped[str]
     spec: Mapped[dict] = mapped_column(JSON)        # 视觉锚点 / 设计参数
     image_path: Mapped[str | None] = None           # 生成的参考图（04/05 产出）
-    # 可追源：最初由哪个项目的 02 Bible 生成；可空（手动创建的全局资产无来源）
-    source_project_id: Mapped[int | None] = mapped_column(
-        ForeignKey("project.id"), default=None
-    )
     created_at: Mapped[datetime] = mapped_column(default=func.now())
-    projects: Mapped[list["Project"]] = relationship(
-        secondary="project_asset", back_populates="assets"
-    )
-
-class ProjectAsset(Base):
-    """项目↔资产 多对多关联表（ADR-005）。"""
-    __tablename__ = "project_asset"
-    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), primary_key=True)
-    asset_id: Mapped[int] = mapped_column(ForeignKey("asset.id"), primary_key=True)
+    project: Mapped["Project"] = relationship(back_populates="assets")
 
 class Episode(Base):
     __tablename__ = "episode"

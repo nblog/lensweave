@@ -24,8 +24,9 @@ class CanvasNode(BaseModel):
     """A node on the EP canvas (flat DTO over the Node hierarchy).
 
     Every node has id / name / position / data (the base ``Node`` fields).
-    ``ref_id`` lets an IMAGE node reference a global Asset (character/prop/scene
-    semantics ride on Asset.kind) or a TEXT node bind a Segment.
+    ``ref_id`` lets an IMAGE node reference a project-owned Asset
+    (character/prop/scene semantics ride on Asset.kind) or a TEXT node bind a
+    Segment.
     """
 
     id: str
@@ -71,14 +72,10 @@ class CanvasGraph(BaseModel):
         for e in self.edges:
             src, tgt = by_id[e.source], by_id[e.target]
             if tgt.kind not in ADAPTER_INPUT_TYPES:
-                raise ValueError(
-                    f"{tgt.kind} is a data node and accepts no input"
-                )
+                raise ValueError(f"{tgt.kind} is a data node and accepts no input")
             out_type = NODE_OUTPUT_TYPE[src.kind]
             if out_type not in ADAPTER_INPUT_TYPES[tgt.kind]:
-                raise ValueError(
-                    f"incompatible: {src.kind}({out_type}) -> {tgt.kind}"
-                )
+                raise ValueError(f"incompatible: {src.kind}({out_type}) -> {tgt.kind}")
         return self
 
     def _assert_acyclic(self) -> None:

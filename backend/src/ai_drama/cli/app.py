@@ -75,20 +75,22 @@ def seed_demo(
     init_db()
     with SessionLocal() as db:
         project = services.create_project(db, ProjectCreate(title="Demo · 单段出片"))
-        char = services.create_asset(
+        char = services.create_project_asset(
             db,
+            project.id,
             AssetCreate(
-                kind=AssetKind.CHARACTER, name="女主", source_project_id=project.id
+                kind=AssetKind.CHARACTER,
+                name="女主",
             ),
         )
-        scene = services.create_asset(
+        scene = services.create_project_asset(
             db,
+            project.id,
             AssetCreate(
-                kind=AssetKind.SCENE, name="国公府前院", source_project_id=project.id
+                kind=AssetKind.SCENE,
+                name="国公府前院",
             ),
         )
-        services.link_project_asset(db, project.id, char.id)
-        services.link_project_asset(db, project.id, scene.id)
         episode = services.create_episode(
             db,
             project.id,
@@ -139,7 +141,7 @@ def seed_demo(
         services.save_canvas(db, episode.id, graph)
 
         def image_for_asset(ref_id):
-            asset = services.get_asset(db, ref_id)
+            asset = services.get_project_asset(db, project.id, ref_id)
             return asset.image_path if asset else None
 
         request = services.compile_video_request(

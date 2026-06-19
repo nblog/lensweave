@@ -40,22 +40,24 @@ def get_project(db: Session, project_id: int) -> Project | None:
     return db.get(Project, project_id)
 
 
-# --- asset (global library, ADR-005) ---
+def get_project_by_uid(db: Session, project_uid: str) -> Project | None:
+    return db.scalar(select(Project).where(Project.uid == project_uid))
 
 
-def create_asset(db: Session, data: AssetCreate) -> Asset:
-    """Create a global asset. Optionally records its source project."""
-    if data.source_project_id is not None and (
-        db.get(Project, data.source_project_id) is None
-    ):
-        raise LookupError(f"source project {data.source_project_id} not found")
+# --- asset (project-owned) ---
+
+
+def create_project_asset(db: Session, project_id: int, data: AssetCreate) -> Asset:
+    """Create an asset owned by one project."""
+    if db.get(Project, project_id) is None:
+        raise LookupError(f"project {project_id} not found")
     asset = Asset(
+        project_id=project_id,
         kind=data.kind.value,
         name=data.name,
         description=data.description,
         spec=data.spec,
         image_path=data.image_path,
-        source_project_id=data.source_project_id,
     )
     db.add(asset)
     db.commit()
@@ -63,63 +65,30 @@ def create_asset(db: Session, data: AssetCreate) -> Asset:
     return asset
 
 
-def list_assets(db: Session, *, kind: str | None = None) -> list[Asset]:
-    """List all global assets, optionally filtered by kind."""
-    stmt = select(Asset).order_by(Asset.id)
+def list_project_assets(
+    db: Session, project_id: int, *, kind: str | None = None
+) -> list[Asset]:
+    """List assets owned by a project."""
+    if db.get(Project, project_id) is None:
+        raise LookupError(f"project {project_id} not found")
+    stmt = select(Asset).where(Asset.project_id == project_id).order_by(Asset.id)
     if kind is not None:
         stmt = stmt.where(Asset.kind == kind)
     return list(db.scalars(stmt))
 
 
-def get_asset(db: Session, asset_id: int) -> Asset | None:
-    return db.get(Asset, asset_id)
+def get_project_asset(db: Session, project_id: int, asset_id: int) -> Asset | None:
+    stmt = select(Asset).where(Asset.id == asset_id, Asset.project_id == project_id)
+    return db.scalar(stmt)
 
 
-def delete_asset(db: Session, asset_id: int) -> None:
-    """Delete a global asset, removing any project references first.
-
-    Assets are global (ADR-005) and may be referenced by multiple projects via
-    the ``project_asset`` association; clearing the relationship keeps those
-    association rows from dangling before the asset row is removed.
-    """
-    asset = db.get(Asset, asset_id)
+def delete_project_asset(db: Session, project_id: int, asset_id: int) -> None:
+    """Delete an asset only when it belongs to the given project."""
+    asset = get_project_asset(db, project_id, asset_id)
     if asset is None:
-        raise LookupError(f"asset {asset_id} not found")
-    asset.projects.clear()
+        raise LookupError(f"asset {asset_id} not found in project {project_id}")
     db.delete(asset)
     db.commit()
-
-
-def list_project_assets(db: Session, project_id: int) -> list[Asset]:
-    """Assets a project references."""
-    project = db.get(Project, project_id)
-    if project is None:
-        raise LookupError(f"project {project_id} not found")
-    return list(project.assets)
-
-
-def link_project_asset(db: Session, project_id: int, asset_id: int) -> None:
-    """Reference a global asset from a project (idempotent)."""
-    project = db.get(Project, project_id)
-    if project is None:
-        raise LookupError(f"project {project_id} not found")
-    asset = db.get(Asset, asset_id)
-    if asset is None:
-        raise LookupError(f"asset {asset_id} not found")
-    if asset not in project.assets:
-        project.assets.append(asset)
-        db.commit()
-
-
-def unlink_project_asset(db: Session, project_id: int, asset_id: int) -> None:
-    """Remove a project's reference to a global asset (does not delete it)."""
-    project = db.get(Project, project_id)
-    if project is None:
-        raise LookupError(f"project {project_id} not found")
-    asset = db.get(Asset, asset_id)
-    if asset is not None and asset in project.assets:
-        project.assets.remove(asset)
-        db.commit()
 
 
 # --- episode ---

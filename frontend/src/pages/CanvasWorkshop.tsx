@@ -8,9 +8,16 @@
  * node = context order. "Render video" on a video_gen node submits the episode
  * canvas node, polls the job, and plays the clip on that node.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ReactFlow,
   Background,
@@ -31,10 +38,13 @@ import {
   Boxes,
   Clapperboard,
   Image as ImageIcon,
+  Loader2,
   RotateCw,
   Save,
   Sparkles,
+  Timer,
   Type,
+  X,
 } from "lucide-react";
 
 import {
@@ -42,6 +52,7 @@ import {
   BASE_URL,
   DEFAULT_GENERATION_CHANNEL,
   type Asset,
+  type AssetKind,
   type CanvasGraphDTO,
   type GenerationChannel,
   type Job,
@@ -71,6 +82,8 @@ type NodeData = {
   jobStatus?: Job["status"];
   jobError?: string | null;
   generatedAt?: string;
+  generationStartedAt?: number;
+  generationElapsedMs?: number;
 };
 
 type InputSummary = {
@@ -84,17 +97,28 @@ type RuntimeNodeData = NodeData & {
   segments: SegmentRow[];
   orderedInputs: InputSummary[];
   isRendering: boolean;
+  nowMs: number;
   canRenderVideo: boolean;
   onPatchNode: (id: string, patch: Partial<NodeData>) => void;
   onUploadImage: (id: string, imageUri: string) => void;
   onPreviewImage: (src: string, title: string) => void;
+  onAddImageAsset: (id: string) => void;
   onGenerateText: (id: string) => void;
   onGenerateImage: (id: string) => void;
   onRenderVideo: (id: string) => void;
 };
 
 type CanvasNode = Node<NodeData, "canvasNode">;
-type NodeRunState = Pick<NodeData, "jobStatus" | "generatedAt">;
+type NodeRunState = Pick<
+  NodeData,
+  "jobStatus" | "generatedAt" | "generationStartedAt" | "generationElapsedMs"
+>;
+type GeneratedAssetDialogState = {
+  nodeId: string;
+  imageUri: string;
+  previewSrc: string;
+  suggestedName: string;
+};
 
 // Port type produced by each node kind, and inputs each adapter accepts —
 // mirrors the backend enums (docs/01 §2.3) so the frontend guardrail matches.
@@ -118,23 +142,28 @@ const TERMINAL_JOB_STATUSES: Job["status"][] = [
   "failed",
   "canceled",
 ];
+const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "scene", "prop"];
+const GENERATION_CHANNEL_STORAGE_KEY = "ai-drama:generation-channel";
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeCard };
 
 let idCounter = 0;
 const nextId = (p: string) => `${p}-${++idCounter}`;
 
 export function CanvasWorkshop({
-  projectId,
+  projectUid,
   episodeId,
 }: {
-  projectId: number;
+  projectUid: string;
   episodeId: number;
 }) {
-  void projectId;
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const queryClient = useQueryClient();
 
-  const assets = useQuery({ queryKey: ["assets"], queryFn: () => api.listAssets() });
+  const assets = useQuery({
+    queryKey: ["assets", projectUid],
+    queryFn: () => api.listProjectAssets(projectUid),
+  });
   const videoSettings = useQuery({
     queryKey: ["modelCatalog", "seedance", "videoSettings"],
     queryFn: () => api.getSeedanceVideoSettings(),
@@ -152,9 +181,12 @@ export function CanvasWorkshop({
   const [previewImage, setPreviewImage] = useState<ImagePreviewState | null>(
     null,
   );
+  const [assetDialog, setAssetDialog] =
+    useState<GeneratedAssetDialogState | null>(null);
   const [generationChannel, setGenerationChannel] = useState<GenerationChannel>(
-    DEFAULT_GENERATION_CHANNEL,
+    () => readStoredGenerationChannel(),
   );
+  const [elapsedNow, setElapsedNow] = useState(() => Date.now());
   const draggedInputIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -169,6 +201,16 @@ export function CanvasWorkshop({
     window.addEventListener("keydown", closeOnEscape);
     return () => window.removeEventListener("keydown", closeOnEscape);
   }, [previewImage]);
+
+  useEffect(() => {
+    storeGenerationChannel(generationChannel);
+  }, [generationChannel]);
+
+  useEffect(() => {
+    if (!renderingNodeId) return;
+    const timer = window.setInterval(() => setElapsedNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [renderingNodeId]);
 
   useEffect(() => {
     void api.getCanvas(episodeId).then((graph) => {
@@ -202,6 +244,34 @@ export function CanvasWorkshop({
   const handlePreviewImage = useCallback((src: string, title: string) => {
     setPreviewImage({ src, title });
   }, []);
+
+  const handleAddImageAsset = useCallback(
+    (id: string) => {
+      const node = nodes.find((n) => n.id === id);
+      if (!node?.data.imageUrl) return;
+      setAssetDialog({
+        nodeId: id,
+        imageUri: node.data.imageUrl,
+        previewSrc: imagePreviewUrl(node.data, assets.data ?? []) ?? node.data.imageUrl,
+        suggestedName: node.data.label || t("canvas.nodeImageGen"),
+      });
+    },
+    [assets.data, nodes, t],
+  );
+
+  const handleCreateGeneratedAsset = useCallback(
+    async (body: {
+      kind: AssetKind;
+      name: string;
+      description: string | null;
+      image_path: string;
+    }) => {
+      await api.createProjectAsset(projectUid, body);
+      await queryClient.invalidateQueries({ queryKey: ["assets", projectUid] });
+      setAssetDialog(null);
+    },
+    [projectUid, queryClient],
+  );
 
   // Confirm node deletions to avoid accidental loss (docs/04 §3.4); deleting an
   // edge alone is cheap and reversible, so it passes through without a prompt.
@@ -311,138 +381,147 @@ export function CanvasWorkshop({
     setSavedAt(formatCanvasTimestamp());
   };
 
-  const handleGenerateText = useCallback(
-    async (nodeId: string) => {
+  const saveNodesSnapshot = useCallback(
+    async (nextNodes: CanvasNode[]) => {
       await api.saveCanvas(
         episodeId,
-        flowToDto(episodeId, nodes, edges, videoSettings.data),
+        flowToDto(episodeId, nextNodes, edges, videoSettings.data),
       );
       setSavedAt(formatCanvasTimestamp());
+    },
+    [edges, episodeId, videoSettings.data],
+  );
+
+  const handleGenerateText = useCallback(
+    async (nodeId: string) => {
+      const startedAt = Date.now();
+      setElapsedNow(startedAt);
       setRenderingNodeId(nodeId);
-      updateNode(setNodes, nodeId, {
-        jobId: undefined,
-        jobStatus: "queued",
-        jobError: null,
-        generatedAt: undefined,
-      });
+      let latestNodes = patchNodes(
+        nodes,
+        nodeId,
+        createGenerationStartPatch(startedAt),
+      );
+      setNodes(latestNodes);
 
       try {
-        const job = await api.submitText(episodeId, nodeId, generationChannel);
-        const patch = patchForJob(job);
-        const nextNodes = patchNodes(nodes, nodeId, patch);
-        setNodes(nextNodes);
-        await api.saveCanvas(
-          episodeId,
-          flowToDto(episodeId, nextNodes, edges, videoSettings.data),
-        );
-        setSavedAt(formatCanvasTimestamp());
+        await saveNodesSnapshot(latestNodes);
+        let current = await api.submitText(episodeId, nodeId, generationChannel);
+        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current, startedAt));
+        setNodes(latestNodes);
+        while (!TERMINAL_JOB_STATUSES.includes(current.status)) {
+          await wait(1000);
+          current = await api.getJob(current.id);
+          latestNodes = patchNodes(
+            latestNodes,
+            nodeId,
+            patchForJob(current, startedAt),
+          );
+          setNodes(latestNodes);
+        }
+        await saveNodesSnapshot(latestNodes);
       } catch (error) {
-        updateNode(setNodes, nodeId, {
-          jobStatus: "failed",
-          jobError: error instanceof Error ? error.message : String(error),
-          generatedAt: formatCanvasTimestamp(),
-        });
+        latestNodes = patchNodes(
+          latestNodes,
+          nodeId,
+          patchForGenerationError(error, startedAt),
+        );
+        setNodes(latestNodes);
+        await saveNodesSnapshot(latestNodes).catch(() => undefined);
       } finally {
         setRenderingNodeId((current) => (current === nodeId ? null : current));
       }
     },
-    [edges, episodeId, generationChannel, nodes, setNodes, videoSettings.data],
+    [episodeId, generationChannel, nodes, saveNodesSnapshot, setNodes],
   );
 
   const handleGenerateImage = useCallback(
     async (nodeId: string) => {
-      await api.saveCanvas(
-        episodeId,
-        flowToDto(episodeId, nodes, edges, videoSettings.data),
-      );
-      setSavedAt(formatCanvasTimestamp());
+      const startedAt = Date.now();
+      setElapsedNow(startedAt);
       setRenderingNodeId(nodeId);
-      updateNode(setNodes, nodeId, {
-        jobId: undefined,
-        jobStatus: "queued",
-        jobError: null,
-        imageUrl: undefined,
-        generatedAt: undefined,
-      });
+      let latestNodes = patchNodes(
+        nodes,
+        nodeId,
+        createGenerationStartPatch(startedAt, { imageUrl: undefined }),
+      );
+      setNodes(latestNodes);
 
       try {
-        const job = await api.submitImage(episodeId, nodeId, generationChannel);
-        const patch = patchForJob(job);
-        const nextNodes = patchNodes(nodes, nodeId, patch);
-        setNodes(nextNodes);
-        await api.saveCanvas(
-          episodeId,
-          flowToDto(episodeId, nextNodes, edges, videoSettings.data),
-        );
-        setSavedAt(formatCanvasTimestamp());
+        await saveNodesSnapshot(latestNodes);
+        let current = await api.submitImage(episodeId, nodeId, generationChannel);
+        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current, startedAt));
+        setNodes(latestNodes);
+        while (!TERMINAL_JOB_STATUSES.includes(current.status)) {
+          await wait(1000);
+          current = await api.getJob(current.id);
+          latestNodes = patchNodes(
+            latestNodes,
+            nodeId,
+            patchForJob(current, startedAt),
+          );
+          setNodes(latestNodes);
+        }
+        await saveNodesSnapshot(latestNodes);
       } catch (error) {
-        updateNode(setNodes, nodeId, {
-          jobStatus: "failed",
-          jobError: error instanceof Error ? error.message : String(error),
-          generatedAt: formatCanvasTimestamp(),
-        });
+        latestNodes = patchNodes(
+          latestNodes,
+          nodeId,
+          patchForGenerationError(error, startedAt),
+        );
+        setNodes(latestNodes);
+        await saveNodesSnapshot(latestNodes).catch(() => undefined);
       } finally {
         setRenderingNodeId((current) => (current === nodeId ? null : current));
       }
     },
-    [edges, episodeId, generationChannel, nodes, setNodes, videoSettings.data],
+    [episodeId, generationChannel, nodes, saveNodesSnapshot, setNodes],
   );
 
   const handleRenderVideo = useCallback(
     async (nodeId: string) => {
-      await api.saveCanvas(
-        episodeId,
-        flowToDto(episodeId, nodes, edges, videoSettings.data),
-      );
-      setSavedAt(formatCanvasTimestamp());
+      const startedAt = Date.now();
+      setElapsedNow(startedAt);
       setRenderingNodeId(nodeId);
-      updateNode(setNodes, nodeId, {
-        jobId: undefined,
-        jobStatus: "queued",
-        jobError: null,
-        clipPath: null,
-        videoUrl: undefined,
-        generatedAt: undefined,
-      });
-
-      let latestNodes = patchNodes(nodes, nodeId, {
-        jobStatus: "queued",
-        jobError: null,
-      });
+      let latestNodes = patchNodes(
+        nodes,
+        nodeId,
+        createGenerationStartPatch(startedAt, {
+          clipPath: null,
+          videoUrl: undefined,
+        }),
+      );
+      setNodes(latestNodes);
       try {
+        await saveNodesSnapshot(latestNodes);
         const submitted = await api.submitVideo(episodeId, nodeId, generationChannel);
         let current = submitted;
-        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current));
+        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current, startedAt));
         setNodes(latestNodes);
         while (!TERMINAL_JOB_STATUSES.includes(current.status)) {
-          await new Promise((r) => setTimeout(r, 1000));
+          await wait(1000);
           current = await api.getJob(submitted.id);
-          latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current));
+          latestNodes = patchNodes(
+            latestNodes,
+            nodeId,
+            patchForJob(current, startedAt),
+          );
           setNodes(latestNodes);
         }
-        await api.saveCanvas(
-          episodeId,
-          flowToDto(episodeId, latestNodes, edges, videoSettings.data),
-        );
-        setSavedAt(formatCanvasTimestamp());
+        await saveNodesSnapshot(latestNodes);
       } catch (error) {
-        updateNode(setNodes, nodeId, {
-          jobStatus: "failed",
-          jobError: error instanceof Error ? error.message : String(error),
-          generatedAt: formatCanvasTimestamp(),
-        });
+        latestNodes = patchNodes(
+          latestNodes,
+          nodeId,
+          patchForGenerationError(error, startedAt),
+        );
+        setNodes(latestNodes);
+        await saveNodesSnapshot(latestNodes).catch(() => undefined);
       } finally {
         setRenderingNodeId((current) => (current === nodeId ? null : current));
       }
     },
-    [
-      edges,
-      episodeId,
-      generationChannel,
-      nodes,
-      setNodes,
-      videoSettings.data,
-    ],
+    [episodeId, generationChannel, nodes, saveNodesSnapshot, setNodes],
   );
 
   // Ordered inputs of the selected adapter node (for the inspector list).
@@ -466,12 +545,14 @@ export function CanvasWorkshop({
           segments: segments.data ?? [],
           orderedInputs: orderedInputsByNodeId[n.id] ?? [],
           isRendering: renderingNodeId === n.id,
+          nowMs: elapsedNow,
           canRenderVideo:
             n.data.kind === "video_gen" &&
             hasVideoPromptInput(n.id, nodes, edges),
           onPatchNode: patchNode,
           onUploadImage: handleUploadImage,
           onPreviewImage: handlePreviewImage,
+          onAddImageAsset: handleAddImageAsset,
           onGenerateText: handleGenerateText,
           onGenerateImage: handleGenerateImage,
           onRenderVideo: handleRenderVideo,
@@ -485,7 +566,9 @@ export function CanvasWorkshop({
       handleRenderVideo,
       handleGenerateImage,
       handlePreviewImage,
+      handleAddImageAsset,
       handleUploadImage,
+      elapsedNow,
       nodes,
       orderedInputsByNodeId,
       patchNode,
@@ -687,7 +770,7 @@ export function CanvasWorkshop({
               </button>
               {selected.data.jobStatus && (
                 <div className="inspector-run-meta">
-                  <NodeRunMeta node={selected.data} />
+                  <NodeRunMeta node={selected.data} nowMs={elapsedNow} />
                 </div>
               )}
               {selected.data.jobError && (
@@ -698,6 +781,12 @@ export function CanvasWorkshop({
                 alt={selected.data.label || t("canvas.nodeImageGen")}
                 className="inspector-image-frame"
                 onPreview={handlePreviewImage}
+                previewTrigger="doubleClick"
+                onFavorite={
+                  selected.data.imageUrl
+                    ? () => handleAddImageAsset(selected.id)
+                    : undefined
+                }
                 onRetry={() => handleGenerateImage(selected.id)}
                 retryDisabled={renderingNodeId === selected.id}
               />
@@ -775,7 +864,7 @@ export function CanvasWorkshop({
               )}
               {selected.data.jobStatus && (
                 <div className="inspector-run-meta video-gen-run-meta">
-                  <NodeRunMeta node={selected.data} />
+                  <NodeRunMeta node={selected.data} nowMs={elapsedNow} />
                 </div>
               )}
               {selected.data.jobError && (
@@ -819,6 +908,13 @@ export function CanvasWorkshop({
           onClose={() => setPreviewImage(null)}
         />
       )}
+      {assetDialog && (
+        <GeneratedAssetDialog
+          draft={assetDialog}
+          onClose={() => setAssetDialog(null)}
+          onSubmit={handleCreateGeneratedAsset}
+        />
+      )}
     </div>
   );
 }
@@ -831,41 +927,34 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
   const isTextLike = node.kind === "text" || node.kind === "text_gen";
   const isImageLike = node.kind === "image" || node.kind === "image_gen";
   const isVideoLike = node.kind === "video" || node.kind === "video_gen";
-  const hasEditableTitle = canRenameNodeTitle(node.kind);
+  const showKindBadge = canRenameNodeTitle(node.kind);
   const imagePreview = imagePreviewUrl(node, node.assets);
   const videoPreview = videoPreviewUrl(node);
 
   return (
     <div
-      className={`canvas-node canvas-node-${node.kind}${selected ? " selected" : ""}`}
+      className={`canvas-node canvas-node-${node.kind}${selected ? " selected" : ""}${
+        node.isRendering ? " is-generating" : ""
+      }`}
     >
       {isAdapter && (
         <Handle type="target" position={Position.Top} isConnectable={isConnectable} />
       )}
       <div className="canvas-node-header">
-        {hasEditableTitle ? (
-          <input
-            className="node-title-input nodrag nowheel"
-            value={node.label ?? ""}
-            placeholder={kindLabel}
-            onChange={(e) => node.onPatchNode(id, { label: e.target.value })}
-          />
-        ) : (
-          <strong>{node.label || kindLabel}</strong>
-        )}
-        {(hasEditableTitle || (node.label || kindLabel) !== kindLabel) && (
+        <strong className="node-title-display">{node.label || kindLabel}</strong>
+        {(showKindBadge || (node.label || kindLabel) !== kindLabel) && (
           <span>{kindLabel}</span>
         )}
       </div>
 
       {isTextLike && (
         <div className="node-text-wrap">
-          <textarea
+          <ImeTextarea
             className="node-textarea nodrag nowheel"
             rows={node.kind === "text_gen" ? 3 : 4}
             value={node.text ?? ""}
             placeholder={t("canvas.textValue")}
-            onChange={(e) => node.onPatchNode(id, { text: e.target.value })}
+            onChange={(value) => node.onPatchNode(id, { text: value })}
           />
           {node.kind === "text_gen" && (
             <button
@@ -920,9 +1009,15 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
             alt={node.label || t("canvas.nodeImage")}
             className="image-frame"
             onPreview={node.onPreviewImage}
+            previewTrigger={node.kind === "image_gen" ? "doubleClick" : "button"}
             onUpload={
               node.kind === "image"
                 ? (uri) => node.onUploadImage(id, uri)
+                : undefined
+            }
+            onFavorite={
+              node.kind === "image_gen" && node.imageUrl
+                ? () => node.onAddImageAsset(id)
                 : undefined
             }
             onRetry={
@@ -986,7 +1081,9 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
         </div>
       )}
 
-      {node.jobStatus && <NodeRunMeta node={node} />}
+      {node.isRendering && <NodeGenerationOverlay node={node} />}
+
+      {node.jobStatus && <NodeRunMeta node={node} nowMs={node.nowMs} />}
 
       <Handle type="source" position={Position.Bottom} isConnectable={isConnectable} />
     </div>
@@ -1011,14 +1108,47 @@ function patchNodes(
   );
 }
 
-function patchForJob(job: Job): Partial<NodeData> {
+function createGenerationStartPatch(
+  startedAt: number,
+  patch: Partial<NodeData> = {},
+): Partial<NodeData> {
+  return {
+    ...patch,
+    jobId: undefined,
+    jobStatus: "queued",
+    jobError: null,
+    generatedAt: undefined,
+    generationStartedAt: startedAt,
+    generationElapsedMs: 0,
+  };
+}
+
+function patchForGenerationError(
+  error: unknown,
+  startedAt: number,
+): Partial<NodeData> {
+  return {
+    jobStatus: "failed",
+    jobError: error instanceof Error ? error.message : String(error),
+    generatedAt: formatCanvasTimestamp(),
+    generationStartedAt: undefined,
+    generationElapsedMs: elapsedMsSince(startedAt),
+  };
+}
+
+function patchForJob(job: Job, startedAt?: number): Partial<NodeData> {
   const result = job.result ?? {};
+  const isTerminal = TERMINAL_JOB_STATUSES.includes(job.status);
   const patch: Partial<NodeData> = {
     jobId: job.id,
     jobStatus: job.status,
     jobError: job.error,
   };
-  if (TERMINAL_JOB_STATUSES.includes(job.status)) {
+  if (typeof startedAt === "number") {
+    patch.generationElapsedMs = elapsedMsSince(startedAt);
+    patch.generationStartedAt = isTerminal ? undefined : startedAt;
+  }
+  if (isTerminal) {
     patch.generatedAt = formatCanvasTimestamp();
   }
   if (typeof result.text === "string") {
@@ -1033,18 +1163,104 @@ function patchForJob(job: Job): Partial<NodeData> {
   return patch;
 }
 
-function NodeRunMeta({ node }: { node: NodeRunState }) {
-  const icon =
-    node.jobStatus === "succeeded"
-      ? "✅"
-      : node.jobStatus === "failed" || node.jobStatus === "canceled"
-        ? "❌"
-        : "…";
+function NodeGenerationOverlay({ node }: { node: RuntimeNodeData }) {
+  const { t } = useTranslation();
+  const elapsedMs = currentRunElapsedMs(node, node.nowMs);
+
+  return (
+    <div className="node-generation-overlay" aria-live="polite">
+      <div className="node-generation-content">
+        <Loader2 className="node-generation-spinner" size={18} aria-hidden />
+        <strong>{t("canvas.generating")}</strong>
+        {elapsedMs != null && (
+          <small>{t("canvas.elapsed", { time: formatElapsedDuration(elapsedMs) })}</small>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function NodeRunMeta({
+  node,
+  nowMs,
+}: {
+  node: NodeRunState;
+  nowMs?: number;
+}) {
+  const { t } = useTranslation();
+  const elapsedMs = currentRunElapsedMs(node, nowMs);
+  const statusLabel = node.jobStatus ? jobStatusLabel(node.jobStatus, t) : "";
+
   return (
     <div className="node-run-meta">
-      <span aria-hidden>{icon}</span>
+      {node.jobStatus && (
+        <span
+          className={`node-run-dot node-run-dot-${node.jobStatus}`}
+          aria-hidden
+        />
+      )}
+      {statusLabel && <span className="node-run-status">{statusLabel}</span>}
+      {elapsedMs != null && (
+        <span className="node-run-elapsed">
+          <Timer size={12} aria-hidden />
+          {t("canvas.elapsed", { time: formatElapsedDuration(elapsedMs) })}
+        </span>
+      )}
       {node.generatedAt && <time>{node.generatedAt}</time>}
     </div>
+  );
+}
+
+function ImeTextarea({
+  value,
+  onChange,
+  className,
+  rows,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  rows?: number;
+  placeholder?: string;
+}) {
+  const [draft, setDraft] = useState(value);
+  const isComposingRef = useRef(false);
+
+  useEffect(() => {
+    if (!isComposingRef.current) {
+      setDraft(value);
+    }
+  }, [value]);
+
+  return (
+    <textarea
+      className={className}
+      rows={rows}
+      value={draft}
+      placeholder={placeholder}
+      onCompositionStart={() => {
+        isComposingRef.current = true;
+      }}
+      onCompositionEnd={(event) => {
+        isComposingRef.current = false;
+        const nextValue = event.currentTarget.value;
+        setDraft(nextValue);
+        onChange(nextValue);
+      }}
+      onChange={(event) => {
+        const nextValue = event.currentTarget.value;
+        setDraft(nextValue);
+        if (!isComposingRef.current) {
+          onChange(nextValue);
+        }
+      }}
+      onBlur={() => {
+        if (draft !== value) {
+          onChange(draft);
+        }
+      }}
+    />
   );
 }
 
@@ -1118,12 +1334,10 @@ function TextNodeEditor({
         </>
       )}
       <label>{t("canvas.textValue")}</label>
-      <textarea
+      <ImeTextarea
         rows={5}
         value={text}
-        onChange={(e) => {
-          onChange(refId, e.target.value, node.data.label);
-        }}
+        onChange={(value) => onChange(refId, value, node.data.label)}
       />
     </div>
   );
@@ -1183,6 +1397,131 @@ function ImageNodeEditor({
   );
 }
 
+function GeneratedAssetDialog({
+  draft,
+  onClose,
+  onSubmit,
+}: {
+  draft: GeneratedAssetDialogState;
+  onClose: () => void;
+  onSubmit: (body: {
+    kind: AssetKind;
+    name: string;
+    description: string | null;
+    image_path: string;
+  }) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [kind, setKind] = useState<AssetKind>("character");
+  const [name, setName] = useState(draft.suggestedName);
+  const [description, setDescription] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      setError(t("assets.nameRequired"));
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      await onSubmit({
+        kind,
+        name: trimmedName,
+        description: description.trim() || null,
+        image_path: draft.imageUri,
+      });
+    } catch (submitError) {
+      setError(
+        submitError instanceof Error ? submitError.message : t("assets.saveError"),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div
+      className="asset-save-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t("assets.addGeneratedTitle")}
+    >
+      <form className="asset-save-panel" onSubmit={handleSubmit}>
+        <button
+          className="asset-save-close"
+          type="button"
+          onClick={onClose}
+          aria-label={t("confirm.cancel")}
+          disabled={isSaving}
+        >
+          <X size={18} aria-hidden />
+        </button>
+
+        <div className="asset-save-preview">
+          <img src={draft.previewSrc} alt={draft.suggestedName} />
+        </div>
+
+        <div className="asset-save-body">
+          <span className="project-page-kicker">{t("assets.addFromGenerated")}</span>
+          <h3>{t("assets.addGeneratedTitle")}</h3>
+          <p>{t("assets.addGeneratedIntro")}</p>
+
+          <label htmlFor={`asset-kind-${draft.nodeId}`}>{t("assets.kind")}</label>
+          <select
+            id={`asset-kind-${draft.nodeId}`}
+            value={kind}
+            onChange={(event) => setKind(event.target.value as AssetKind)}
+            disabled={isSaving}
+          >
+            {ASSET_KIND_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {t(`assets.kind${assetKindLabelSuffix(option)}`)}
+              </option>
+            ))}
+          </select>
+
+          <label htmlFor={`asset-name-${draft.nodeId}`}>{t("assets.name")}</label>
+          <input
+            id={`asset-name-${draft.nodeId}`}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder={t("assets.namePlaceholder")}
+            disabled={isSaving}
+            autoFocus
+          />
+
+          <label htmlFor={`asset-description-${draft.nodeId}`}>
+            {t("assets.description")}
+          </label>
+          <textarea
+            id={`asset-description-${draft.nodeId}`}
+            rows={4}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder={t("assets.descriptionPlaceholder")}
+            disabled={isSaving}
+          />
+
+          {error && <p className="error small">{error}</p>}
+
+          <div className="asset-save-actions">
+            <button type="button" onClick={onClose} disabled={isSaving}>
+              {t("confirm.cancel")}
+            </button>
+            <button className="primary" type="submit" disabled={isSaving}>
+              {isSaving ? t("assets.saving") : t("assets.saveGenerated")}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // --- flow <-> dto conversion ---
 
 function flowToDto(
@@ -1233,6 +1572,8 @@ function dtoToFlow(graph: CanvasGraphDTO): {
         jobStatus: readJobStatus(n.data?.job_status),
         jobError: readString(n.data?.job_error) ?? null,
         generatedAt: readString(n.data?.generated_at),
+        generationStartedAt: readNumber(n.data?.generation_started_at),
+        generationElapsedMs: readNumber(n.data?.generation_elapsed_ms),
       },
     })),
     edges: graph.edges.map((e) => ({
@@ -1269,6 +1610,12 @@ function nodeDataToPayload(
   if (data.jobStatus) payload.job_status = data.jobStatus;
   if (data.jobError) payload.job_error = data.jobError;
   if (data.generatedAt) payload.generated_at = data.generatedAt;
+  if (typeof data.generationStartedAt === "number") {
+    payload.generation_started_at = data.generationStartedAt;
+  }
+  if (typeof data.generationElapsedMs === "number") {
+    payload.generation_elapsed_ms = data.generationElapsedMs;
+  }
   return payload;
 }
 
@@ -1345,6 +1692,54 @@ function formatCanvasTimestamp(date = new Date()): string {
   return formatTimestamp(date);
 }
 
+function elapsedMsSince(startedAt: number, nowMs = Date.now()): number {
+  return Math.max(0, nowMs - startedAt);
+}
+
+function currentRunElapsedMs(
+  node: NodeRunState,
+  nowMs = Date.now(),
+): number | undefined {
+  if (
+    typeof node.generationStartedAt === "number" &&
+    (node.jobStatus === "queued" || node.jobStatus === "running")
+  ) {
+    return elapsedMsSince(node.generationStartedAt, nowMs);
+  }
+  return node.generationElapsedMs;
+}
+
+function formatElapsedDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+  return `${seconds}s`;
+}
+
+type Translate = ReturnType<typeof useTranslation>["t"];
+
+function jobStatusLabel(status: Job["status"], t: Translate): string {
+  switch (status) {
+    case "queued":
+      return t("canvas.jobQueued");
+    case "running":
+      return t("canvas.jobRunning");
+    case "succeeded":
+      return t("canvas.jobSucceeded");
+    case "failed":
+      return t("canvas.jobFailed");
+    case "canceled":
+      return t("canvas.jobCanceled");
+  }
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 function nodeKindLabelKey(kind: NodeKind): string {
   switch (kind) {
     case "text":
@@ -1379,6 +1774,17 @@ function normalizeNodeLabel(name: string, kind: NodeKind): string {
   return name || kind;
 }
 
+function assetKindLabelSuffix(kind: AssetKind): string {
+  switch (kind) {
+    case "character":
+      return "Character";
+    case "scene":
+      return "Scene";
+    case "prop":
+      return "Prop";
+  }
+}
+
 function normalizeVideoDuration(
   value: string | number,
   settings: VideoGenSettings,
@@ -1408,6 +1814,10 @@ function readString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function readNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
 function readJobStatus(value: unknown): Job["status"] | undefined {
   if (
     value === "queued" ||
@@ -1419,4 +1829,27 @@ function readJobStatus(value: unknown): Job["status"] | undefined {
     return value;
   }
   return undefined;
+}
+
+function readStoredGenerationChannel(): GenerationChannel {
+  if (typeof window === "undefined") return DEFAULT_GENERATION_CHANNEL;
+  try {
+    const stored = window.localStorage.getItem(GENERATION_CHANNEL_STORAGE_KEY);
+    return isGenerationChannel(stored) ? stored : DEFAULT_GENERATION_CHANNEL;
+  } catch {
+    return DEFAULT_GENERATION_CHANNEL;
+  }
+}
+
+function storeGenerationChannel(channel: GenerationChannel): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(GENERATION_CHANNEL_STORAGE_KEY, channel);
+  } catch {
+    // Local storage may be unavailable in restricted browser contexts.
+  }
+}
+
+function isGenerationChannel(value: unknown): value is GenerationChannel {
+  return value === "mock" || value === "routin";
 }
