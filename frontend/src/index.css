@@ -1,9 +1,29 @@
 :root {
+  --color-app-bg: #f5fbff;
+  --color-surface: #fff;
+  --color-surface-soft: #f0f9ff;
+  --color-surface-muted: #f8fafc;
+  --color-primary: #0ea5e9;
+  --color-primary-hover: #0284c7;
+  --color-primary-strong: #0369a1;
+  --color-primary-rgb: 14, 165, 233;
+  --color-accent-rgb: 56, 189, 248;
+  --color-primary-bg: #e0f2fe;
+  --color-primary-soft: #f0f9ff;
+  --color-primary-border: #bae6fd;
+  --color-focus: #38bdf8;
+  --color-border: #dbeafe;
+  --color-border-strong: #bae6fd;
+  --color-border-subtle: #eaf6ff;
+  --color-text: #1f2937;
+  --color-muted: #64748b;
+  --color-muted-strong: #475569;
+  --color-muted-soft: #94a3b8;
   font-family: system-ui, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei",
     sans-serif;
   line-height: 1.5;
-  color: #2b2a28;
-  background: #fff;
+  color: var(--color-text);
+  background: var(--color-app-bg);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -14,6 +34,8 @@
 
 body {
   margin: 0;
+  background: var(--color-app-bg);
+  color: var(--color-text);
 }
 
 #root {

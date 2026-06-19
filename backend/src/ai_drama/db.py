@@ -31,6 +31,7 @@ from sqlalchemy.orm import (
 )
 
 from ai_drama.config import get_settings
+from ai_drama.models.enums import AssetScope
 
 
 class Base(DeclarativeBase):
@@ -43,7 +44,7 @@ def generate_project_uid() -> str:
 
 
 class Project(Base):
-    """A single drama production. Owns episodes and its private assets."""
+    """A single drama production. Owns episodes and fixed project assets."""
 
     __tablename__ = "project"
 
@@ -68,12 +69,20 @@ class Project(Base):
 
 
 class Asset(Base):
-    """A project-owned visual asset (character / prop / scene); 04/05 output."""
+    """A visual asset disclosed at global, project, or episode scope."""
 
     __tablename__ = "asset"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), index=True)
+    project_id: Mapped[int | None] = mapped_column(
+        ForeignKey("project.id"), index=True, nullable=True
+    )
+    episode_id: Mapped[int | None] = mapped_column(
+        ForeignKey("episode.id"), index=True, nullable=True, default=None
+    )
+    source_asset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("asset.id"), index=True, nullable=True, default=None
+    )
     kind: Mapped[str] = mapped_column(String(20))
     name: Mapped[str] = mapped_column(String(200))
     description: Mapped[str | None] = mapped_column(default=None)
@@ -82,6 +91,16 @@ class Asset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="assets")
+    episode: Mapped["Episode"] = relationship(back_populates="assets")
+
+    @property
+    def scope(self) -> str:
+        """Return the current disclosure layer from ownership columns."""
+        if self.project_id is None:
+            return AssetScope.GLOBAL.value
+        if self.episode_id is not None:
+            return AssetScope.TEMPORARY.value
+        return AssetScope.FIXED.value
 
 
 class Episode(Base):
@@ -99,6 +118,9 @@ class Episode(Base):
 
     project: Mapped["Project"] = relationship(back_populates="episodes")
     segments: Mapped[list["Segment"]] = relationship(
+        back_populates="episode", cascade="all, delete-orphan"
+    )
+    assets: Mapped[list["Asset"]] = relationship(
         back_populates="episode", cascade="all, delete-orphan"
     )
 
@@ -183,6 +205,7 @@ def init_db() -> None:
     Base.metadata.create_all(engine)
     _ensure_project_uid_column()
     _ensure_asset_project_column()
+    _ensure_asset_scope_columns()
 
 
 def _ensure_project_uid_column() -> None:
@@ -312,4 +335,28 @@ def _ensure_asset_project_column() -> None:
 
         conn.execute(
             text("CREATE INDEX IF NOT EXISTS ix_asset_project_id ON asset (project_id)")
+        )
+
+
+def _ensure_asset_scope_columns() -> None:
+    """Add layered-asset columns for global/project/episode disclosure."""
+    inspector = inspect(engine)
+    if not inspector.has_table("asset"):
+        return
+
+    asset_columns = {col["name"] for col in inspector.get_columns("asset")}
+    with engine.begin() as conn:
+        if "episode_id" not in asset_columns:
+            conn.execute(text("ALTER TABLE asset ADD COLUMN episode_id INTEGER"))
+        if "source_asset_id" not in asset_columns:
+            conn.execute(text("ALTER TABLE asset ADD COLUMN source_asset_id INTEGER"))
+
+        conn.execute(
+            text("CREATE INDEX IF NOT EXISTS ix_asset_episode_id ON asset (episode_id)")
+        )
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_asset_source_asset_id "
+                "ON asset (source_asset_id)"
+            )
         )

@@ -8,9 +8,13 @@
  */
 import { useTranslation } from "react-i18next";
 import { Maximize2, RotateCw, Star, Upload } from "lucide-react";
-import type { ReactNode } from "react";
+import type { ClipboardEvent, ReactNode } from "react";
 import { useConfirm } from "./confirm-context";
-import { ACCEPTED_IMAGE_TYPES, readImageAsDataUri } from "../utils/image";
+import {
+  ACCEPTED_IMAGE_TYPES,
+  imageFileFromClipboard,
+  readImageAsDataUri,
+} from "../utils/image";
 
 type PreviewTrigger = "button" | "doubleClick";
 
@@ -31,7 +35,7 @@ export function ImagePreviewFrame({
   className?: string;
   /** Optional badge rendered in the top-left corner (e.g. asset kind tag). */
   tag?: ReactNode;
-  onPreview: (src: string, title: string) => void;
+  onPreview?: (src: string, title: string) => void;
   previewTrigger?: PreviewTrigger;
   onUpload?: (imageUri: string) => void;
   onRetry?: () => void;
@@ -55,6 +59,15 @@ export function ImagePreviewFrame({
     readImageAsDataUri(file, onUpload);
   };
 
+  const handlePaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    if (!onUpload) return;
+    const file = imageFileFromClipboard(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void handleFile(file);
+  };
+
   return (
     <div
       className={`node-media-frame ${
@@ -63,17 +76,26 @@ export function ImagePreviewFrame({
       title={
         previewTrigger === "doubleClick" && src
           ? t("canvas.doubleClickPreview")
-          : undefined
+          : onUpload
+            ? t("canvas.pasteImage")
+            : undefined
       }
+      tabIndex={onUpload ? 0 : undefined}
+      aria-label={onUpload ? t("canvas.pasteImage") : undefined}
+      onPaste={handlePaste}
       onDoubleClick={(e) => {
-        if (!src || previewTrigger !== "doubleClick") return;
+        if (!src || !onPreview || previewTrigger !== "doubleClick") return;
         e.stopPropagation();
         onPreview(src, alt);
       }}
     >
-      {src ? <img src={src} alt={alt} /> : <span>{t("canvas.noPreview")}</span>}
+      {src ? (
+        <img src={src} alt={alt} />
+      ) : (
+        <span>{onUpload ? t("canvas.pasteImage") : t("canvas.noPreview")}</span>
+      )}
       {tag && <span className="node-media-tag">{tag}</span>}
-      {src && previewTrigger === "button" && (
+      {src && onPreview && previewTrigger === "button" && (
         <button
           className="node-preview nodrag"
           type="button"

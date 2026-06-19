@@ -15,16 +15,29 @@ export interface Project {
 }
 
 export type AssetKind = "character" | "prop" | "scene";
+export type AssetScope = "global" | "fixed" | "temporary";
 
 export interface Asset {
   id: number;
-  project_id: number;
+  project_id: number | null;
+  episode_id: number | null;
+  source_asset_id: number | null;
+  scope: AssetScope;
   kind: AssetKind;
   name: string;
   description: string | null;
   spec: Record<string, unknown>;
   image_path: string | null;
   created_at: string;
+}
+
+export interface AssetUpdate {
+  kind?: AssetKind;
+  name?: string;
+  description?: string | null;
+  spec?: Record<string, unknown>;
+  image_path?: string | null;
+  source_asset_id?: number | null;
 }
 
 export interface Episode {
@@ -140,6 +153,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await resp.json()) as T;
 }
 
+async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  const resp = await fetch(`${BASE_URL}${path}`, {
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    throw new Error(`HTTP ${resp.status}${detail ? `: ${detail}` : ""}`);
+  }
+}
+
 export const api = {
   // model catalog
   getSeedanceVideoSettings: () =>
@@ -155,7 +179,28 @@ export const api = {
       body: JSON.stringify({ title }),
     }),
 
-  // project-owned assets
+  // layered assets
+  listGlobalAssets: (kind?: AssetKind) =>
+    request<Asset[]>(`/api/assets${kind ? `?kind=${kind}` : ""}`),
+  createGlobalAsset: (body: {
+    kind: AssetKind;
+    name: string;
+    description?: string | null;
+    spec?: Record<string, unknown>;
+    image_path?: string | null;
+    source_asset_id?: number | null;
+  }) =>
+    request<Asset>("/api/assets", {
+      method: "POST",
+      body: JSON.stringify({ ...body, scope: "global" }),
+    }),
+  updateGlobalAsset: (assetId: number, body: AssetUpdate) =>
+    request<Asset>(`/api/assets/${assetId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteGlobalAsset: (assetId: number) =>
+    requestVoid(`/api/assets/${assetId}`, { method: "DELETE" }),
   listProjectAssets: (projectUid: string, kind?: AssetKind) =>
     request<Asset[]>(
       `/api/projects/${projectUid}/assets${kind ? `?kind=${kind}` : ""}`,
@@ -166,7 +211,11 @@ export const api = {
       kind: AssetKind;
       name: string;
       description?: string | null;
+      spec?: Record<string, unknown>;
       image_path?: string | null;
+      scope?: AssetScope;
+      episode_id?: number | null;
+      source_asset_id?: number | null;
     },
   ) =>
     request<Asset>(`/api/projects/${projectUid}/assets`, {
@@ -174,13 +223,53 @@ export const api = {
       body: JSON.stringify(body),
     }),
   deleteProjectAsset: (projectUid: string, assetId: number) =>
-    fetch(`${BASE_URL}/api/projects/${projectUid}/assets/${assetId}`, {
+    requestVoid(`/api/projects/${projectUid}/assets/${assetId}`, {
       method: "DELETE",
-    }).then((r) => {
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    }),
+  updateProjectAsset: (
+    projectUid: string,
+    assetId: number,
+    body: AssetUpdate,
+  ) =>
+    request<Asset>(`/api/projects/${projectUid}/assets/${assetId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
     }),
   getProjectAsset: (projectUid: string, assetId: number) =>
     request<Asset>(`/api/projects/${projectUid}/assets/${assetId}`),
+  listEpisodeAssets: (episodeId: number, kind?: AssetKind) =>
+    request<Asset[]>(
+      `/api/episodes/${episodeId}/assets${kind ? `?kind=${kind}` : ""}`,
+    ),
+  createEpisodeAsset: (
+    episodeId: number,
+    body: {
+      kind: AssetKind;
+      name: string;
+      description?: string | null;
+      spec?: Record<string, unknown>;
+      image_path?: string | null;
+      scope?: AssetScope;
+      source_asset_id?: number | null;
+    },
+  ) =>
+    request<Asset>(`/api/episodes/${episodeId}/assets`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateEpisodeAsset: (
+    episodeId: number,
+    assetId: number,
+    body: AssetUpdate,
+  ) =>
+    request<Asset>(`/api/episodes/${episodeId}/assets/${assetId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteEpisodeAsset: (episodeId: number, assetId: number) =>
+    requestVoid(`/api/episodes/${episodeId}/assets/${assetId}`, {
+      method: "DELETE",
+    }),
 
   // episodes
   listEpisodes: (projectUid: string) =>

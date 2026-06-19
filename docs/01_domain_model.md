@@ -15,8 +15,8 @@ Project (一部剧)
  ├─ CharacterBible     1:1   人物圣经（02 产出）
  ├─ WorldBible         1:1   世界圣经（02 产出）
  ├─ EpisodeMap         1:1   分集总表（02 产出）
- ├─ Asset              1:N   项目私有视觉资产（人物/道具/场景）
- │   └─ image_path           生成的参考图（04/05 产出）
+ ├─ Asset              1:N   项目固定视觉资产（人物/道具/场景）
+ │   └─ image_path           生成的参考图（04/05 产出，可指向全局源）
  └─ Episode            1:N   分集
      ├─ EpisodeScript  1:1   单集剧本（03 产出）
      ├─ Storyboard     1:1   分集分镜 JSON（06 产出）
@@ -27,10 +27,11 @@ Project (一部剧)
          ├─ CanvasNode  1:N
          └─ CanvasEdge  1:N  （有序连线）
 
+Asset                  全局资产可不挂 Project；临时资产可挂 Episode
 GenerationJob          独立表，异步任务状态（ADR-003），可挂在任意可生成实体上
 ```
 
-**资产项目化**（ADR-005）：`Asset` 通过 `project_id` 隶属于单个 `Project`。项目资产只能在所属项目内列表、删除、被画布 `ImageNode.ref_id` 引用；service 层在编译生成请求时会按 episode 的 `project_id` 校验资产归属，防止跨项目误用。02→04/05 的出图产物写入当前项目资产，而不是发布到全局库。
+**资产三层披露**（ADR-005）：`Asset.scope` 分为 `global` / `fixed` / `temporary`。全局资产 `project_id=None, episode_id=None`，可被任意项目和分集引用；项目固定资产 `project_id=<Project.id>, episode_id=None`，只在所属项目可见；单集临时资产 `project_id=<Project.id>, episode_id=<Episode.id>`，只在当前 EP 工坊可见。`source_asset_id` 允许项目/临时资产指向同一个全局源资产。service 层编译画布时按 episode 校验可见性：只能引用“全局 + 当前项目固定 + 当前单集临时”。
 
 **Segment 边界**：`Episode 1:N Segment` 是为未来逐段出片保留的结构关系。当前阶段不要求 `Episode` 预设固定总时长，也不从总时长推导 segment 数量；`Segment.duration_sec` 只表达单段视频的建议长度，默认 15s，并保留 `≤15s` 的单段硬上限。
 
@@ -48,6 +49,11 @@ class AssetKind(StrEnum):
     CHARACTER = "character"
     PROP = "prop"
     SCENE = "scene"
+
+class AssetScope(StrEnum):
+    GLOBAL = "global"       # 全局可复用源
+    FIXED = "fixed"         # 当前项目固定资产
+    TEMPORARY = "temporary" # 当前单集临时资产
 
 class ShotType(StrEnum):
     WIDE = "wide"
@@ -260,7 +266,7 @@ class CanvasNode(BaseModel):
     """对应 Node 继承体系的扁平 DTO（kind 区分子类型）。
 
     基类语义：每个节点都有 id / name / position / data。``ref_id`` 让
-    ImageNode 引用当前项目 Asset（人物/道具/场景语义由 Asset.kind 承载），或让
+    ImageNode 引用当前 episode 可见 Asset（全局 / 项目 / 本集临时，人物/道具/场景语义由 Asset.kind 承载），或让
     内容型 TextNode 绑定某个 Segment。
     """
     id: str
@@ -311,7 +317,7 @@ class CanvasGraph(BaseModel):
 
 1. 选定一个适配器节点（如某个 `VIDEO_GEN`），回溯其所有入边。
 2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`，见 [08](../test/instructions/08_视频生成执行.md)）。顺序首先作用在 adapter 的最终多模态 `content` 上，同时 `IMAGE` 输入也会投影成参考图列表。
-3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的当前项目 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
+3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的当前 episode 可见 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
 4. 编译产物是对应的 `TextGenRequest` / `ImageGenRequest` / `VideoGenRequest`（见 [02 适配层](02_adapter.md)），直接喂给对应 adapter。
 
 > 连线顺序即上下文顺序，是需求方的明确要求；`order` 字段是它的载体，在适配器节点处体现为"第 1 个接入、第 2 个接入…"的有序输入清单。编译规则把"自由 DAG"安全降维成"adapter 的结构化输入"，是 ADR-001/006 权衡里"约束护栏"的具体实现。
@@ -339,16 +345,22 @@ class Project(Base):
     episodes: Mapped[list["Episode"]] = relationship(back_populates="project")
 
 class Asset(Base):
-    """项目私有视觉资产（ADR-005）。"""
+    """三层披露的视觉资产（ADR-005）。"""
     __tablename__ = "asset"
     id: Mapped[int] = mapped_column(primary_key=True)
-    project_id: Mapped[int] = mapped_column(ForeignKey("project.id"), index=True)
+    # global: project_id=None, episode_id=None
+    # fixed: project_id=<Project.id>, episode_id=None
+    # temporary: project_id=<Project.id>, episode_id=<Episode.id>
+    project_id: Mapped[int | None] = mapped_column(ForeignKey("project.id"), index=True)
+    episode_id: Mapped[int | None] = mapped_column(ForeignKey("episode.id"), index=True)
+    source_asset_id: Mapped[int | None] = mapped_column(ForeignKey("asset.id"), index=True)
     kind: Mapped[str]                       # AssetKind
     name: Mapped[str]
-    spec: Mapped[dict] = mapped_column(JSON)        # 视觉锚点 / 设计参数
+    spec: Mapped[dict] = mapped_column(JSON)        # 视觉锚点 / asset_scope 等
     image_path: Mapped[str | None] = None           # 生成的参考图（04/05 产出）
     created_at: Mapped[datetime] = mapped_column(default=func.now())
     project: Mapped["Project"] = relationship(back_populates="assets")
+    episode: Mapped["Episode"] = relationship(back_populates="assets")
 
 class Episode(Base):
     __tablename__ = "episode"
@@ -359,6 +371,7 @@ class Episode(Base):
     script: Mapped[dict | None] = mapped_column(JSON, default=None)       # EpisodeScript
     storyboard: Mapped[dict | None] = mapped_column(JSON, default=None)   # StoryboardJSON
     canvas: Mapped[dict | None] = mapped_column(JSON, default=None)       # CanvasGraph
+    assets: Mapped[list["Asset"]] = relationship(back_populates="episode")
     segments: Mapped[list["SegmentRow"]] = relationship(back_populates="episode")
 
 class SegmentRow(Base):
@@ -404,7 +417,7 @@ class GenerationJob(Base):
 |---|---|---|
 | 字段类型 / 枚举 | pydantic 字段 | `duration_sec: int = Field(default=15, le=15)` |
 | 单实体不变量 | pydantic `model_validator` | segment_id 去重、DAG 无环 |
-| 跨实体一致性 | service 层 | 资产引用存在、segment 引用的 asset 属于同 project |
+| 跨实体一致性 | service 层 | 资产引用存在、ImageNode 引用资产对当前 episode 可见、segment 引用归属正确 |
 | 持久化约束 | ORM / DB | 外键、唯一约束 |
 
 原则：能在 pydantic 层锁的就不下沉到 service，能在 schema 锁的就不靠约定——与用户"把不变量集中在数据模型本身"的偏好一致。

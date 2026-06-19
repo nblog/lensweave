@@ -20,6 +20,18 @@ class AssetKind(StrEnum):
     SCENE = "scene"
 
 
+class AssetScope(StrEnum):
+    """Asset disclosure layer.
+
+    GLOBAL assets can be referenced by every project and episode. FIXED assets
+    belong to one project. TEMPORARY assets belong to one episode.
+    """
+
+    GLOBAL = "global"
+    FIXED = "fixed"
+    TEMPORARY = "temporary"
+
+
 class PortType(StrEnum):
     """Port / data type. Edges are validated for type compatibility."""
 

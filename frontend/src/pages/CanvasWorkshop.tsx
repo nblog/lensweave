@@ -35,8 +35,10 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
+  Archive,
   Boxes,
   Clapperboard,
+  Globe2,
   Image as ImageIcon,
   Loader2,
   RotateCw,
@@ -53,6 +55,7 @@ import {
   DEFAULT_GENERATION_CHANNEL,
   type Asset,
   type AssetKind,
+  type AssetScope,
   type CanvasGraphDTO,
   type GenerationChannel,
   type Job,
@@ -119,6 +122,8 @@ type GeneratedAssetDialogState = {
   previewSrc: string;
   suggestedName: string;
 };
+type GeneratedAssetTarget = "project" | "global";
+type ProjectGeneratedAssetScope = Extract<AssetScope, "fixed" | "temporary">;
 
 // Port type produced by each node kind, and inputs each adapter accepts —
 // mirrors the backend enums (docs/01 §2.3) so the frontend guardrail matches.
@@ -142,7 +147,7 @@ const TERMINAL_JOB_STATUSES: Job["status"][] = [
   "failed",
   "canceled",
 ];
-const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "scene", "prop"];
+const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "prop", "scene"];
 const GENERATION_CHANNEL_STORAGE_KEY = "ai-drama:generation-channel";
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeCard };
 
@@ -161,8 +166,8 @@ export function CanvasWorkshop({
   const queryClient = useQueryClient();
 
   const assets = useQuery({
-    queryKey: ["assets", projectUid],
-    queryFn: () => api.listProjectAssets(projectUid),
+    queryKey: ["episode-assets", projectUid, episodeId],
+    queryFn: () => api.listEpisodeAssets(episodeId),
   });
   const videoSettings = useQuery({
     queryKey: ["modelCatalog", "seedance", "videoSettings"],
@@ -261,16 +266,50 @@ export function CanvasWorkshop({
 
   const handleCreateGeneratedAsset = useCallback(
     async (body: {
+      target: GeneratedAssetTarget;
+      scope: ProjectGeneratedAssetScope;
       kind: AssetKind;
       name: string;
       description: string | null;
+      spec: Record<string, unknown>;
       image_path: string;
     }) => {
-      await api.createProjectAsset(projectUid, body);
-      await queryClient.invalidateQueries({ queryKey: ["assets", projectUid] });
+      const spec = {
+        ...body.spec,
+        asset_scope: body.target === "global" ? "global" : body.scope,
+      };
+      if (body.target === "global") {
+        await api.createGlobalAsset({
+          kind: body.kind,
+          name: body.name,
+          description: body.description,
+          spec,
+          image_path: body.image_path,
+        });
+      } else if (body.scope === "temporary") {
+        await api.createEpisodeAsset(episodeId, {
+          kind: body.kind,
+          name: body.name,
+          description: body.description,
+          spec,
+          image_path: body.image_path,
+          scope: "temporary",
+        });
+      } else {
+        await api.createProjectAsset(projectUid, {
+          kind: body.kind,
+          name: body.name,
+          description: body.description,
+          spec,
+          image_path: body.image_path,
+          scope: "fixed",
+        });
+      }
+      await queryClient.invalidateQueries({ queryKey: ["assets"] });
+      await queryClient.invalidateQueries({ queryKey: ["episode-assets"] });
       setAssetDialog(null);
     },
-    [projectUid, queryClient],
+    [episodeId, projectUid, queryClient],
   );
 
   // Confirm node deletions to avoid accidental loss (docs/04 §3.4); deleting an
@@ -1381,7 +1420,8 @@ function ImageNodeEditor({
         <option value="">{t("canvas.noBinding")}</option>
         {assets.map((a) => (
           <option key={a.id} value={a.id}>
-            {a.name} ({a.kind})
+            {a.name} · {t(`assets.scope${assetScopeLabelSuffix(readAssetScope(a))}`)} ·{" "}
+            {t(`assets.kind${assetKindLabelSuffix(a.kind)}`)}
           </option>
         ))}
       </select>
@@ -1405,13 +1445,18 @@ function GeneratedAssetDialog({
   draft: GeneratedAssetDialogState;
   onClose: () => void;
   onSubmit: (body: {
+    target: GeneratedAssetTarget;
+    scope: ProjectGeneratedAssetScope;
     kind: AssetKind;
     name: string;
     description: string | null;
+    spec: Record<string, unknown>;
     image_path: string;
   }) => Promise<void>;
 }) {
   const { t } = useTranslation();
+  const [target, setTarget] = useState<GeneratedAssetTarget>("project");
+  const [scope, setScope] = useState<ProjectGeneratedAssetScope>("fixed");
   const [kind, setKind] = useState<AssetKind>("character");
   const [name, setName] = useState(draft.suggestedName);
   const [description, setDescription] = useState("");
@@ -1426,12 +1471,15 @@ function GeneratedAssetDialog({
       return;
     }
     setIsSaving(true);
-    setError(null);
+      setError(null);
     try {
       await onSubmit({
+        target,
+        scope,
         kind,
         name: trimmedName,
         description: description.trim() || null,
+        spec: { asset_scope: target === "global" ? "global" : scope },
         image_path: draft.imageUri,
       });
     } catch (submitError) {
@@ -1469,6 +1517,70 @@ function GeneratedAssetDialog({
           <span className="project-page-kicker">{t("assets.addFromGenerated")}</span>
           <h3>{t("assets.addGeneratedTitle")}</h3>
           <p>{t("assets.addGeneratedIntro")}</p>
+
+          <label>{t("assets.assetTarget")}</label>
+          <div className="asset-scope-options asset-target-options" role="group">
+            <button
+              type="button"
+              className={
+                target === "project"
+                  ? "asset-scope-option active"
+                  : "asset-scope-option"
+              }
+              onClick={() => setTarget("project")}
+              disabled={isSaving}
+            >
+              <Boxes size={14} aria-hidden />
+              {t("assets.targetProject")}
+            </button>
+            <button
+              type="button"
+              className={
+                target === "global"
+                  ? "asset-scope-option active"
+                  : "asset-scope-option"
+              }
+              onClick={() => setTarget("global")}
+              disabled={isSaving}
+            >
+              <Globe2 size={14} aria-hidden />
+              {t("assets.targetGlobal")}
+            </button>
+          </div>
+
+          {target === "project" && (
+            <>
+              <label>{t("assets.assetScope")}</label>
+              <div className="asset-scope-options asset-target-options" role="group">
+                <button
+                  type="button"
+                  className={
+                    scope === "fixed"
+                      ? "asset-scope-option active"
+                      : "asset-scope-option"
+                  }
+                  onClick={() => setScope("fixed")}
+                  disabled={isSaving}
+                >
+                  <Archive size={14} aria-hidden />
+                  {t("assets.scopeFixed")}
+                </button>
+                <button
+                  type="button"
+                  className={
+                    scope === "temporary"
+                      ? "asset-scope-option active"
+                      : "asset-scope-option"
+                  }
+                  onClick={() => setScope("temporary")}
+                  disabled={isSaving}
+                >
+                  <Timer size={14} aria-hidden />
+                  {t("assets.scopeTemporary")}
+                </button>
+              </div>
+            </>
+          )}
 
           <label htmlFor={`asset-kind-${draft.nodeId}`}>{t("assets.kind")}</label>
           <select
@@ -1783,6 +1895,28 @@ function assetKindLabelSuffix(kind: AssetKind): string {
     case "prop":
       return "Prop";
   }
+}
+
+function assetScopeLabelSuffix(scope: AssetScope): string {
+  switch (scope) {
+    case "global":
+      return "Global";
+    case "fixed":
+      return "Fixed";
+    case "temporary":
+      return "Temporary";
+  }
+}
+
+function readAssetScope(asset: Asset): AssetScope {
+  if (isAssetScope(asset.scope)) return asset.scope;
+  if (asset.project_id == null) return "global";
+  if (asset.episode_id != null) return "temporary";
+  return "fixed";
+}
+
+function isAssetScope(value: unknown): value is AssetScope {
+  return value === "global" || value === "fixed" || value === "temporary";
 }
 
 function normalizeVideoDuration(

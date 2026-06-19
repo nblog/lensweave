@@ -18,6 +18,22 @@ export function readImageAsDataUri(file: File, onLoad: (uri: string) => void): v
   reader.readAsDataURL(file);
 }
 
+/** Return the first image file from a paste event, if one exists. */
+export function imageFileFromClipboard(
+  data: DataTransfer | null,
+): File | null {
+  if (!data) return null;
+  for (const item of data.items) {
+    if (item.kind !== "file" || !item.type.startsWith("image/")) continue;
+    const file = item.getAsFile();
+    if (file) return file;
+  }
+  for (const file of data.files) {
+    if (file.type.startsWith("image/")) return file;
+  }
+  return null;
+}
+
 /** Trigger a browser download of an image src (data URI or remote URL). */
 export function downloadImage(src: string, title: string): void {
   triggerDownload(src, imageDownloadName(src, title));

@@ -24,6 +24,7 @@ from ai_drama.model_catalog import VideoGenSettings, get_seedance_video_settings
 from ai_drama.models import (
     AssetCreate,
     AssetRead,
+    AssetUpdate,
     CanvasGraph,
     EpisodeCreate,
     EpisodeRead,
@@ -122,7 +123,46 @@ def create_app() -> FastAPI:
     def get_project(project_uid: str, db: Session = Depends(get_db)):
         return ProjectRead.model_validate(require_project_by_uid(db, project_uid))
 
-    # --- assets (project-owned) ---
+    # --- assets (global / project fixed / episode temporary) ---
+
+    @app.post("/api/assets", response_model=AssetRead, status_code=201)
+    def create_global_asset(data: AssetCreate, db: Session = Depends(get_db)):
+        try:
+            return AssetRead.model_validate(services.create_global_asset(db, data))
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/assets", response_model=list[AssetRead])
+    def list_global_assets(kind: str | None = None, db: Session = Depends(get_db)):
+        return [
+            AssetRead.model_validate(a)
+            for a in services.list_global_assets(db, kind=kind)
+        ]
+
+    @app.get("/api/assets/{asset_id}", response_model=AssetRead)
+    def get_global_asset(asset_id: int, db: Session = Depends(get_db)):
+        asset = services.get_global_asset(db, asset_id)
+        if asset is None:
+            raise HTTPException(404, "global asset not found")
+        return AssetRead.model_validate(asset)
+
+    @app.patch("/api/assets/{asset_id}", response_model=AssetRead)
+    def update_global_asset(
+        asset_id: int, data: AssetUpdate, db: Session = Depends(get_db)
+    ):
+        try:
+            return AssetRead.model_validate(
+                services.update_global_asset(db, asset_id, data)
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.delete("/api/assets/{asset_id}", status_code=204)
+    def delete_global_asset(asset_id: int, db: Session = Depends(get_db)):
+        try:
+            services.delete_global_asset(db, asset_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.post(
         "/api/projects/{project_uid}/assets",
@@ -163,6 +203,24 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "asset not found")
         return AssetRead.model_validate(asset)
 
+    @app.patch(
+        "/api/projects/{project_uid}/assets/{asset_id}",
+        response_model=AssetRead,
+    )
+    def update_project_asset(
+        project_uid: str,
+        asset_id: int,
+        data: AssetUpdate,
+        db: Session = Depends(get_db),
+    ):
+        project = require_project_by_uid(db, project_uid)
+        try:
+            return AssetRead.model_validate(
+                services.update_project_asset(db, project.id, asset_id, data)
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
     @app.delete("/api/projects/{project_uid}/assets/{asset_id}", status_code=204)
     def delete_project_asset(
         project_uid: str, asset_id: int, db: Session = Depends(get_db)
@@ -198,6 +256,56 @@ def create_app() -> FastAPI:
             EpisodeRead.model_validate(e)
             for e in services.list_episodes(db, project.id)
         ]
+
+    @app.post(
+        "/api/episodes/{episode_id}/assets",
+        response_model=AssetRead,
+        status_code=201,
+    )
+    def create_episode_asset(
+        episode_id: int, data: AssetCreate, db: Session = Depends(get_db)
+    ):
+        try:
+            return AssetRead.model_validate(
+                services.create_episode_asset(db, episode_id, data)
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get("/api/episodes/{episode_id}/assets", response_model=list[AssetRead])
+    def list_episode_assets(
+        episode_id: int, kind: str | None = None, db: Session = Depends(get_db)
+    ):
+        try:
+            return [
+                AssetRead.model_validate(a)
+                for a in services.list_episode_assets(db, episode_id, kind=kind)
+            ]
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.patch("/api/episodes/{episode_id}/assets/{asset_id}", response_model=AssetRead)
+    def update_episode_asset(
+        episode_id: int,
+        asset_id: int,
+        data: AssetUpdate,
+        db: Session = Depends(get_db),
+    ):
+        try:
+            return AssetRead.model_validate(
+                services.update_episode_asset(db, episode_id, asset_id, data)
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.delete("/api/episodes/{episode_id}/assets/{asset_id}", status_code=204)
+    def delete_episode_asset(
+        episode_id: int, asset_id: int, db: Session = Depends(get_db)
+    ):
+        try:
+            services.delete_episode_asset(db, episode_id, asset_id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
 
     @app.put("/api/episodes/{episode_id}/storyboard", response_model=list[SegmentRead])
     def set_storyboard(
@@ -287,10 +395,10 @@ def create_app() -> FastAPI:
         def image_for_asset(ref_id: int | None) -> str | None:
             if ref_id is None:
                 return None
-            asset = services.get_project_asset(db, episode.project_id, ref_id)
+            asset = services.get_episode_asset(db, episode.id, ref_id)
             if asset is None:
                 raise services.CompileError(
-                    f"asset {ref_id} does not belong to this project"
+                    f"asset {ref_id} is not visible in this episode"
                 )
             return asset.image_path
 
@@ -331,10 +439,10 @@ def create_app() -> FastAPI:
         def image_for_asset(ref_id: int | None) -> str | None:
             if ref_id is None:
                 return None
-            asset = services.get_project_asset(db, episode.project_id, ref_id)
+            asset = services.get_episode_asset(db, episode.id, ref_id)
             if asset is None:
                 raise services.CompileError(
-                    f"asset {ref_id} does not belong to this project"
+                    f"asset {ref_id} is not visible in this episode"
                 )
             return asset.image_path
 
@@ -377,10 +485,10 @@ def create_app() -> FastAPI:
         def image_for_asset(ref_id: int | None) -> str | None:
             if ref_id is None:
                 return None
-            asset = services.get_project_asset(db, segment.episode.project_id, ref_id)
+            asset = services.get_episode_asset(db, segment.episode_id, ref_id)
             if asset is None:
                 raise services.CompileError(
-                    f"asset {ref_id} does not belong to this project"
+                    f"asset {ref_id} is not visible in this episode"
                 )
             return asset.image_path
 

@@ -14,6 +14,8 @@ from sqlalchemy.orm import Session
 from ai_drama.db import Asset, Episode, Project, Segment
 from ai_drama.models import (
     AssetCreate,
+    AssetScope,
+    AssetUpdate,
     CanvasGraph,
     EpisodeCreate,
     ProjectCreate,
@@ -44,20 +46,84 @@ def get_project_by_uid(db: Session, project_uid: str) -> Project | None:
     return db.scalar(select(Project).where(Project.uid == project_uid))
 
 
-# --- asset (project-owned) ---
+# --- asset (global / project fixed / episode temporary) ---
+
+
+def create_global_asset(db: Session, data: AssetCreate) -> Asset:
+    """Create an asset in the global library."""
+    return _create_asset(db, data, scope=AssetScope.GLOBAL)
 
 
 def create_project_asset(db: Session, project_id: int, data: AssetCreate) -> Asset:
-    """Create an asset owned by one project."""
-    if db.get(Project, project_id) is None:
+    """Create an asset at project scope unless the request asks for global."""
+    scope = _asset_scope(data, default=AssetScope.FIXED)
+    if scope == AssetScope.GLOBAL:
+        return create_global_asset(db, data)
+    if scope == AssetScope.TEMPORARY:
+        if data.episode_id is None:
+            raise LookupError("episode_id is required for temporary project assets")
+        episode = db.get(Episode, data.episode_id)
+        if episode is None or episode.project_id != project_id:
+            raise LookupError(
+                f"episode {data.episode_id} not found in project {project_id}"
+            )
+        return _create_asset(db, data, scope=scope, project_id=project_id, episode_id=episode.id)
+    return _create_asset(db, data, scope=scope, project_id=project_id)
+
+
+def create_episode_asset(db: Session, episode_id: int, data: AssetCreate) -> Asset:
+    """Create an asset from an episode context.
+
+    The default is a temporary asset scoped to that episode, but the same
+    endpoint can intentionally disclose the asset as project-fixed or global.
+    """
+    episode = db.get(Episode, episode_id)
+    if episode is None:
+        raise LookupError(f"episode {episode_id} not found")
+    scope = _asset_scope(data, default=AssetScope.TEMPORARY)
+    if scope == AssetScope.GLOBAL:
+        return create_global_asset(db, data)
+    if scope == AssetScope.FIXED:
+        return _create_asset(db, data, scope=scope, project_id=episode.project_id)
+    return _create_asset(
+        db,
+        data,
+        scope=scope,
+        project_id=episode.project_id,
+        episode_id=episode.id,
+    )
+
+
+def _create_asset(
+    db: Session,
+    data: AssetCreate,
+    *,
+    scope: AssetScope,
+    project_id: int | None = None,
+    episode_id: int | None = None,
+) -> Asset:
+    if project_id is not None and db.get(Project, project_id) is None:
         raise LookupError(f"project {project_id} not found")
+    if episode_id is not None:
+        episode = db.get(Episode, episode_id)
+        if episode is None:
+            raise LookupError(f"episode {episode_id} not found")
+        if project_id is not None and episode.project_id != project_id:
+            raise LookupError(f"episode {episode_id} not found in project {project_id}")
+    source = _source_asset(db, data.source_asset_id)
+    spec = dict(data.spec)
+    spec["asset_scope"] = scope.value
+    if source is not None:
+        spec["source_asset_id"] = source.id
     asset = Asset(
         project_id=project_id,
+        episode_id=episode_id,
+        source_asset_id=source.id if source else None,
         kind=data.kind.value,
         name=data.name,
         description=data.description,
-        spec=data.spec,
-        image_path=data.image_path,
+        spec=spec,
+        image_path=data.image_path if data.image_path is not None else source.image_path if source else None,
     )
     db.add(asset)
     db.commit()
@@ -68,27 +134,242 @@ def create_project_asset(db: Session, project_id: int, data: AssetCreate) -> Ass
 def list_project_assets(
     db: Session, project_id: int, *, kind: str | None = None
 ) -> list[Asset]:
-    """List assets owned by a project."""
+    """List assets visible at project level: global + this project's fixed assets."""
     if db.get(Project, project_id) is None:
         raise LookupError(f"project {project_id} not found")
-    stmt = select(Asset).where(Asset.project_id == project_id).order_by(Asset.id)
+    return _filter_kind(
+        [
+            *list_global_assets(db, kind=kind),
+            *_list_fixed_project_assets(db, project_id, kind=kind),
+        ],
+        kind,
+    )
+
+
+def list_episode_assets(
+    db: Session, episode_id: int, *, kind: str | None = None
+) -> list[Asset]:
+    """List assets visible in one episode's workshop."""
+    episode = db.get(Episode, episode_id)
+    if episode is None:
+        raise LookupError(f"episode {episode_id} not found")
+    return _filter_kind(
+        [
+            *list_global_assets(db, kind=kind),
+            *_list_fixed_project_assets(db, episode.project_id, kind=kind),
+            *_list_temporary_episode_assets(db, episode.id, kind=kind),
+        ],
+        kind,
+    )
+
+
+def list_global_assets(db: Session, *, kind: str | None = None) -> list[Asset]:
+    """List global assets that can be referenced from any project or episode."""
+    stmt = (
+        select(Asset)
+        .where(Asset.project_id.is_(None), Asset.episode_id.is_(None))
+        .order_by(Asset.id)
+    )
     if kind is not None:
         stmt = stmt.where(Asset.kind == kind)
     return list(db.scalars(stmt))
 
 
-def get_project_asset(db: Session, project_id: int, asset_id: int) -> Asset | None:
-    stmt = select(Asset).where(Asset.id == asset_id, Asset.project_id == project_id)
+def get_global_asset(db: Session, asset_id: int) -> Asset | None:
+    stmt = select(Asset).where(
+        Asset.id == asset_id,
+        Asset.project_id.is_(None),
+        Asset.episode_id.is_(None),
+    )
     return db.scalar(stmt)
 
 
+def get_project_asset(db: Session, project_id: int, asset_id: int) -> Asset | None:
+    """Return a project-visible asset: global or this project's fixed asset."""
+    asset = db.get(Asset, asset_id)
+    if asset is None:
+        return None
+    if asset.project_id is None and asset.episode_id is None:
+        return asset
+    if asset.project_id == project_id and asset.episode_id is None:
+        return asset
+    return None
+
+
+def get_episode_asset(db: Session, episode_id: int, asset_id: int) -> Asset | None:
+    """Return an asset if it is visible in the given episode."""
+    episode = db.get(Episode, episode_id)
+    if episode is None:
+        return None
+    asset = db.get(Asset, asset_id)
+    if asset is None:
+        return None
+    if asset.project_id is None and asset.episode_id is None:
+        return asset
+    if asset.project_id == episode.project_id and asset.episode_id is None:
+        return asset
+    if asset.project_id == episode.project_id and asset.episode_id == episode.id:
+        return asset
+    return None
+
+
+def update_global_asset(db: Session, asset_id: int, data: AssetUpdate) -> Asset:
+    asset = get_global_asset(db, asset_id)
+    if asset is None:
+        raise LookupError(f"global asset {asset_id} not found")
+    return _update_asset(db, asset, data)
+
+
+def update_project_asset(
+    db: Session, project_id: int, asset_id: int, data: AssetUpdate
+) -> Asset:
+    """Edit a fixed asset only when it belongs to the given project."""
+    asset = _get_owned_project_asset(db, project_id, asset_id)
+    if asset is None:
+        raise LookupError(f"asset {asset_id} not found in project {project_id}")
+    return _update_asset(db, asset, data)
+
+
+def update_episode_asset(
+    db: Session, episode_id: int, asset_id: int, data: AssetUpdate
+) -> Asset:
+    """Edit a temporary asset only when it belongs to the given episode."""
+    asset = _get_owned_episode_asset(db, episode_id, asset_id)
+    if asset is None:
+        raise LookupError(f"asset {asset_id} not found in episode {episode_id}")
+    return _update_asset(db, asset, data)
+
+
 def delete_project_asset(db: Session, project_id: int, asset_id: int) -> None:
-    """Delete an asset only when it belongs to the given project."""
-    asset = get_project_asset(db, project_id, asset_id)
+    """Delete a fixed asset only when it belongs to the given project."""
+    asset = _get_owned_project_asset(db, project_id, asset_id)
     if asset is None:
         raise LookupError(f"asset {asset_id} not found in project {project_id}")
     db.delete(asset)
     db.commit()
+
+
+def delete_episode_asset(db: Session, episode_id: int, asset_id: int) -> None:
+    """Delete a temporary asset only when it belongs to the given episode."""
+    asset = _get_owned_episode_asset(db, episode_id, asset_id)
+    if asset is None:
+        raise LookupError(f"asset {asset_id} not found in episode {episode_id}")
+    db.delete(asset)
+    db.commit()
+
+
+def delete_global_asset(db: Session, asset_id: int) -> None:
+    asset = get_global_asset(db, asset_id)
+    if asset is None:
+        raise LookupError(f"global asset {asset_id} not found")
+    db.delete(asset)
+    db.commit()
+
+
+def _update_asset(db: Session, asset: Asset, data: AssetUpdate) -> Asset:
+    fields = data.model_fields_set
+
+    if "kind" in fields and data.kind is not None:
+        asset.kind = data.kind.value
+    if "name" in fields and data.name is not None:
+        asset.name = data.name
+    if "description" in fields:
+        asset.description = data.description
+    if "source_asset_id" in fields:
+        source = _source_asset(db, data.source_asset_id)
+        asset.source_asset_id = source.id if source else None
+        if "image_path" not in fields and source is not None and asset.image_path is None:
+            asset.image_path = source.image_path
+    if "image_path" in fields:
+        asset.image_path = data.image_path
+
+    spec = dict(asset.spec or {})
+    if "spec" in fields and data.spec is not None:
+        spec.update(data.spec)
+    spec["asset_scope"] = asset.scope
+    if asset.source_asset_id is None:
+        spec.pop("source_asset_id", None)
+    else:
+        spec["source_asset_id"] = asset.source_asset_id
+    asset.spec = spec
+
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def _asset_scope(data: AssetCreate, *, default: AssetScope) -> AssetScope:
+    if data.scope is not None:
+        return data.scope
+    raw = data.spec.get("asset_scope")
+    if isinstance(raw, str):
+        try:
+            return AssetScope(raw)
+        except ValueError:
+            pass
+    return default
+
+
+def _source_asset(db: Session, source_asset_id: int | None) -> Asset | None:
+    if source_asset_id is None:
+        return None
+    source = db.get(Asset, source_asset_id)
+    if source is None:
+        raise LookupError(f"source asset {source_asset_id} not found")
+    return source
+
+
+def _list_fixed_project_assets(
+    db: Session, project_id: int, *, kind: str | None = None
+) -> list[Asset]:
+    stmt = (
+        select(Asset)
+        .where(Asset.project_id == project_id, Asset.episode_id.is_(None))
+        .order_by(Asset.id)
+    )
+    if kind is not None:
+        stmt = stmt.where(Asset.kind == kind)
+    return list(db.scalars(stmt))
+
+
+def _list_temporary_episode_assets(
+    db: Session, episode_id: int, *, kind: str | None = None
+) -> list[Asset]:
+    stmt = select(Asset).where(Asset.episode_id == episode_id).order_by(Asset.id)
+    if kind is not None:
+        stmt = stmt.where(Asset.kind == kind)
+    return list(db.scalars(stmt))
+
+
+def _get_owned_project_asset(
+    db: Session, project_id: int, asset_id: int
+) -> Asset | None:
+    stmt = select(Asset).where(
+        Asset.id == asset_id,
+        Asset.project_id == project_id,
+        Asset.episode_id.is_(None),
+    )
+    return db.scalar(stmt)
+
+
+def _get_owned_episode_asset(
+    db: Session, episode_id: int, asset_id: int
+) -> Asset | None:
+    episode = db.get(Episode, episode_id)
+    if episode is None:
+        return None
+    stmt = select(Asset).where(
+        Asset.id == asset_id,
+        Asset.project_id == episode.project_id,
+        Asset.episode_id == episode.id,
+    )
+    return db.scalar(stmt)
+
+
+def _filter_kind(assets: list[Asset], kind: str | None) -> list[Asset]:
+    if kind is None:
+        return assets
+    return [asset for asset in assets if asset.kind == kind]
 
 
 # --- episode ---

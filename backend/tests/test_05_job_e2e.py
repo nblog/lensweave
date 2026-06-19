@@ -101,7 +101,88 @@ def test_episode_video_rejects_asset_from_another_project(client) -> None:
         json={"output_node_id": "vg", "channel": "mock"},
     )
     assert submit.status_code == 400
-    assert "does not belong to this project" in submit.text
+    assert "is not visible in this episode" in submit.text
+
+
+def test_episode_video_accepts_global_and_current_episode_assets(client) -> None:
+    project = client.post("/api/projects", json={"title": "Layered"}).json()
+    global_asset = client.post(
+        "/api/assets",
+        json={"kind": "scene", "name": "全局街道", "image_path": "global.png"},
+    ).json()
+    episode = client.post(
+        f"/api/projects/{project['uid']}/episodes",
+        json={"episode_no": 1, "title": "EP01"},
+    ).json()
+    temp_asset = client.post(
+        f"/api/episodes/{episode['id']}/assets",
+        json={"kind": "prop", "name": "本集纸条", "image_path": "note.png"},
+    ).json()
+
+    canvas = {
+        "episode_id": episode["id"],
+        "nodes": [
+            {"id": "global", "kind": "image", "ref_id": global_asset["id"]},
+            {"id": "temp", "kind": "image", "ref_id": temp_asset["id"]},
+            {"id": "txt", "kind": "text", "data": {"visual_prompt": "street clue"}},
+            {"id": "vg", "kind": "video_gen"},
+        ],
+        "edges": [
+            {"id": "e1", "source": "global", "target": "vg", "order": 1},
+            {"id": "e2", "source": "temp", "target": "vg", "order": 2},
+            {"id": "e3", "source": "txt", "target": "vg", "order": 3},
+        ],
+    }
+    assert (
+        client.put(f"/api/episodes/{episode['id']}/canvas", json=canvas).status_code
+        == 200
+    )
+
+    submit = client.post(
+        f"/api/episodes/{episode['id']}/video",
+        json={"output_node_id": "vg", "channel": "mock"},
+    )
+    assert submit.status_code == 202
+
+
+def test_episode_video_rejects_temporary_asset_from_another_episode(client) -> None:
+    project = client.post("/api/projects", json={"title": "Layered"}).json()
+    episode_a = client.post(
+        f"/api/projects/{project['uid']}/episodes",
+        json={"episode_no": 1, "title": "EP01"},
+    ).json()
+    episode_b = client.post(
+        f"/api/projects/{project['uid']}/episodes",
+        json={"episode_no": 2, "title": "EP02"},
+    ).json()
+    temp_asset = client.post(
+        f"/api/episodes/{episode_b['id']}/assets",
+        json={"kind": "prop", "name": "EP02-only", "image_path": "ep2.png"},
+    ).json()
+
+    canvas = {
+        "episode_id": episode_a["id"],
+        "nodes": [
+            {"id": "img", "kind": "image", "ref_id": temp_asset["id"]},
+            {"id": "txt", "kind": "text", "data": {"visual_prompt": "courtyard"}},
+            {"id": "vg", "kind": "video_gen"},
+        ],
+        "edges": [
+            {"id": "e1", "source": "img", "target": "vg", "order": 1},
+            {"id": "e2", "source": "txt", "target": "vg", "order": 2},
+        ],
+    }
+    assert (
+        client.put(f"/api/episodes/{episode_a['id']}/canvas", json=canvas).status_code
+        == 200
+    )
+
+    submit = client.post(
+        f"/api/episodes/{episode_a['id']}/video",
+        json={"output_node_id": "vg", "channel": "mock"},
+    )
+    assert submit.status_code == 400
+    assert "is not visible in this episode" in submit.text
 
 
 def test_text_and_image_generation_jobs_over_http(client) -> None:

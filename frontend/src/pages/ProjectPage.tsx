@@ -19,6 +19,15 @@ import { ProjectAssetsPanel } from "./ProjectAssetsPanel";
 
 type ProjectStage = "script" | "assets";
 
+const formatEpisodeCode = (episodeNo: number) => `EP0${episodeNo}`;
+
+const displayEpisodeTitle = (episode: { episode_no: number; title: string }) => {
+  const legacyAutoTitle = `EP${episode.episode_no}`;
+  return episode.title === legacyAutoTitle
+    ? formatEpisodeCode(episode.episode_no)
+    : episode.title;
+};
+
 export function ProjectPage({ projectUid }: { projectUid: string }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -56,7 +65,7 @@ export function ProjectPage({ projectUid }: { projectUid: string }) {
           intro: projectTitle,
         };
   const defaultEpisodeTitle = useMemo(
-    () => `EP${episodeCount + 1}`,
+    () => formatEpisodeCode(episodeCount + 1),
     [episodeCount],
   );
 
@@ -147,9 +156,11 @@ export function ProjectPage({ projectUid }: { projectUid: string }) {
                   onClick={() => setSelectedEpisodeId(episode.id)}
                 >
                   <span className="series-index">
-                    {String(episode.episode_no).padStart(2, "0")}
+                    {formatEpisodeCode(episode.episode_no)}
                   </span>
-                  <span className="series-title">{episode.title}</span>
+                  <span className="series-title">
+                    {displayEpisodeTitle(episode)}
+                  </span>
                 </button>
               </li>
             ))}
@@ -223,7 +234,10 @@ export function ProjectPage({ projectUid }: { projectUid: string }) {
         </div>
 
         {activeStage === "assets" ? (
-          <ProjectAssetsPanel projectUid={projectUid} />
+          <ProjectAssetsPanel
+            projectUid={projectUid}
+            episodeId={selectedEpisode?.id ?? null}
+          />
         ) : (
           <section className="script-page-section">
             <div className="script-page-shell">
@@ -233,8 +247,8 @@ export function ProjectPage({ projectUid }: { projectUid: string }) {
                 <p>
                   {selectedEpisode
                     ? t("project.selectedEpisode", {
-                        episode: selectedEpisode.episode_no,
-                        title: selectedEpisode.title,
+                        episode: formatEpisodeCode(selectedEpisode.episode_no),
+                        title: displayEpisodeTitle(selectedEpisode),
                       })
                     : projectTitle}
                 </p>

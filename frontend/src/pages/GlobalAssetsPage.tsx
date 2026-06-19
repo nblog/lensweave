@@ -1,12 +1,9 @@
-/** Project asset gallery: global / project fixed / episode temporary assets. */
+/** Global asset library: reusable visual assets available to every project. */
 import { useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive,
-  Clock3,
   Database,
-  Globe2,
   Image as ImageIcon,
   MapPin,
   Package,
@@ -14,90 +11,43 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { api, type Asset, type AssetKind, type AssetScope } from "../api/client";
+import { api, BASE_URL, type Asset, type AssetKind } from "../api/client";
 import { AssetEditorDialog } from "../components/AssetEditorDialog";
 import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
-import { BASE_URL } from "../api/client";
 
 type AssetFilter = "all" | AssetKind;
 
 const ASSET_FILTERS: AssetFilter[] = ["all", "character", "prop", "scene"];
 const ASSET_GROUPS: AssetKind[] = ["character", "prop", "scene"];
-const ASSET_SCOPE_OPTIONS: AssetScope[] = ["global", "fixed", "temporary"];
 
-export function ProjectAssetsPanel({
-  projectUid,
-  episodeId,
-}: {
-  projectUid: string;
-  episodeId: number | null;
-}) {
+export function GlobalAssetsPage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [scope, setScope] = useState<AssetScope>("global");
   const [filter, setFilter] = useState<AssetFilter>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
 
   const assets = useQuery({
-    queryKey: ["assets", projectUid, episodeId],
-    queryFn: () =>
-      episodeId ? api.listEpisodeAssets(episodeId) : api.listProjectAssets(projectUid),
+    queryKey: ["global-assets"],
+    queryFn: () => api.listGlobalAssets(),
   });
 
-  const allAssets = useMemo(() => assets.data ?? [], [assets.data]);
-  const globalAssets = useMemo(
-    () => allAssets.filter((asset) => readAssetScope(asset) === "global"),
-    [allAssets],
-  );
-  const fixedAssets = useMemo(
-    () => allAssets.filter((asset) => readAssetScope(asset) === "fixed"),
-    [allAssets],
-  );
-  const temporaryAssets = useMemo(
-    () => allAssets.filter((asset) => readAssetScope(asset) === "temporary"),
-    [allAssets],
-  );
-  const activeScope = scope === "temporary" && !episodeId ? "global" : scope;
-  const scopedAssets =
-    activeScope === "global"
-      ? globalAssets
-      : activeScope === "fixed"
-        ? fixedAssets
-        : temporaryAssets;
-  const counts = useMemo(() => countByKind(scopedAssets), [scopedAssets]);
-  const scopeCounts: Record<AssetScope, number> = {
-    global: globalAssets.length,
-    fixed: fixedAssets.length,
-    temporary: temporaryAssets.length,
-  };
+  const globalAssets = useMemo(() => assets.data ?? [], [assets.data]);
+  const counts = useMemo(() => countByKind(globalAssets), [globalAssets]);
   const visibleGroups = ASSET_GROUPS.map((kind) => ({
     kind,
-    assets: scopedAssets.filter(
+    assets: globalAssets.filter(
       (asset) => asset.kind === kind && (filter === "all" || filter === kind),
     ),
   })).filter((group) => filter === "all" || group.kind === filter);
 
   return (
-    <section className="asset-gallery" aria-label={t("assets.heading")}>
-      <div className="asset-gallery-toolbar">
-        <div className="asset-mode-tabs" aria-label={t("assets.assetScope")}>
-          {ASSET_SCOPE_OPTIONS.map((option) => (
-            <button
-              key={option}
-              type="button"
-              className={
-                activeScope === option ? "asset-mode-tab active" : "asset-mode-tab"
-              }
-              onClick={() => setScope(option)}
-              disabled={option === "temporary" && !episodeId}
-            >
-              {scopeIcon(option)}
-              {t(`assets.scopeTab${cap(option)}`, {
-                count: scopeCounts[option],
-              })}
-            </button>
-          ))}
+    <section className="asset-gallery" aria-label={t("assets.globalHeading")}>
+      <div className="projects-header">
+        <div>
+          <span className="project-page-kicker">{t("assets.scopeGlobal")}</span>
+          <h2>{t("assets.globalHeading")}</h2>
+          <p className="asset-page-intro">{t("assets.globalIntro")}</p>
         </div>
         <button
           type="button"
@@ -121,7 +71,7 @@ export function ProjectAssetsPanel({
           >
             {filterIcon(key)}
             {t(`assets.filter${cap(key)}`, {
-              count: key === "all" ? scopedAssets.length : counts[key],
+              count: key === "all" ? globalAssets.length : counts[key],
             })}
           </button>
         ))}
@@ -151,25 +101,13 @@ export function ProjectAssetsPanel({
       </div>
 
       {isCreateOpen && (
-        <AssetCreateDialog
-          defaultScope={activeScope}
-          episodeId={episodeId}
+        <GlobalAssetCreateDialog
           onClose={() => setIsCreateOpen(false)}
           onSubmit={async (body) => {
-            if (body.scope === "global") {
-              await api.createGlobalAsset(body);
-            } else if (body.scope === "temporary") {
-              if (!episodeId) throw new Error(t("assets.episodeRequired"));
-              await api.createEpisodeAsset(episodeId, body);
-            } else {
-              await api.createProjectAsset(projectUid, body);
-            }
+            await api.createGlobalAsset(body);
+            await queryClient.invalidateQueries({ queryKey: ["global-assets"] });
             await queryClient.invalidateQueries({ queryKey: ["assets"] });
-            if (episodeId) {
-              await queryClient.invalidateQueries({
-                queryKey: ["episode-assets", episodeId],
-              });
-            }
+            await queryClient.invalidateQueries({ queryKey: ["episode-assets"] });
             setIsCreateOpen(false);
           }}
         />
@@ -179,29 +117,11 @@ export function ProjectAssetsPanel({
           asset={editingAsset}
           onClose={() => setEditingAsset(null)}
           onSave={async (body) => {
-            const assetScope = readAssetScope(editingAsset);
-            if (assetScope === "global") {
-              await api.updateGlobalAsset(editingAsset.id, body);
-            } else if (assetScope === "temporary") {
-              const targetEpisodeId = editingAsset.episode_id ?? episodeId;
-              if (!targetEpisodeId) throw new Error(t("assets.episodeRequired"));
-              await api.updateEpisodeAsset(targetEpisodeId, editingAsset.id, body);
-            } else {
-              await api.updateProjectAsset(projectUid, editingAsset.id, body);
-            }
+            await api.updateGlobalAsset(editingAsset.id, body);
             await invalidateAssetQueries(queryClient);
           }}
           onDelete={async () => {
-            const assetScope = readAssetScope(editingAsset);
-            if (assetScope === "global") {
-              await api.deleteGlobalAsset(editingAsset.id);
-            } else if (assetScope === "temporary") {
-              const targetEpisodeId = editingAsset.episode_id ?? episodeId;
-              if (!targetEpisodeId) throw new Error(t("assets.episodeRequired"));
-              await api.deleteEpisodeAsset(targetEpisodeId, editingAsset.id);
-            } else {
-              await api.deleteProjectAsset(projectUid, editingAsset.id);
-            }
+            await api.deleteGlobalAsset(editingAsset.id);
             await invalidateAssetQueries(queryClient);
           }}
         />
@@ -279,17 +199,12 @@ function AssetGroup({
   );
 }
 
-function AssetCreateDialog({
-  defaultScope,
-  episodeId,
+function GlobalAssetCreateDialog({
   onClose,
   onSubmit,
 }: {
-  defaultScope: AssetScope;
-  episodeId: number | null;
   onClose: () => void;
   onSubmit: (body: {
-    scope: AssetScope;
     kind: AssetKind;
     name: string;
     description: string | null;
@@ -298,7 +213,6 @@ function AssetCreateDialog({
   }) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const [scope, setScope] = useState<AssetScope>(defaultScope);
   const [kind, setKind] = useState<AssetKind>("character");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -313,10 +227,6 @@ function AssetCreateDialog({
       setError(t("assets.nameRequired"));
       return;
     }
-    if (scope === "temporary" && !episodeId) {
-      setError(t("assets.episodeRequired"));
-      return;
-    }
     if (!imageUri) {
       setError(t("assets.imageRequired"));
       return;
@@ -325,11 +235,10 @@ function AssetCreateDialog({
     setError(null);
     try {
       await onSubmit({
-        scope,
         kind,
         name: trimmedName,
         description: description.trim() || null,
-        spec: { asset_scope: scope },
+        spec: { asset_scope: "global" },
         image_path: imageUri,
       });
     } catch (submitError) {
@@ -367,33 +276,13 @@ function AssetCreateDialog({
         />
 
         <div className="asset-save-body">
-          <span className="project-page-kicker">{t("assets.assetScope")}</span>
-          <h3>{t("assets.uploadAsset")}</h3>
-          <p>{t("assets.uploadAssetIntro")}</p>
+          <span className="project-page-kicker">{t("assets.scopeGlobal")}</span>
+          <h3>{t("assets.uploadGlobalAsset")}</h3>
+          <p>{t("assets.uploadGlobalAssetIntro")}</p>
 
-          <label>{t("assets.assetScope")}</label>
-          <div className="asset-scope-options" role="group">
-            {ASSET_SCOPE_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={
-                  scope === option
-                    ? "asset-scope-option active"
-                    : "asset-scope-option"
-                }
-                onClick={() => setScope(option)}
-                disabled={isSaving || (option === "temporary" && !episodeId)}
-              >
-                {scopeIcon(option, 14)}
-                {t(`assets.scope${cap(option)}`)}
-              </button>
-            ))}
-          </div>
-
-          <label htmlFor="project-asset-kind">{t("assets.kind")}</label>
+          <label htmlFor="global-asset-kind">{t("assets.kind")}</label>
           <select
-            id="project-asset-kind"
+            id="global-asset-kind"
             value={kind}
             onChange={(event) => setKind(event.target.value as AssetKind)}
             disabled={isSaving}
@@ -405,9 +294,9 @@ function AssetCreateDialog({
             ))}
           </select>
 
-          <label htmlFor="project-asset-name">{t("assets.name")}</label>
+          <label htmlFor="global-asset-name">{t("assets.name")}</label>
           <input
-            id="project-asset-name"
+            id="global-asset-name"
             value={name}
             onChange={(event) => setName(event.target.value)}
             placeholder={t("assets.namePlaceholder")}
@@ -415,9 +304,9 @@ function AssetCreateDialog({
             autoFocus
           />
 
-          <label htmlFor="project-asset-description">{t("assets.description")}</label>
+          <label htmlFor="global-asset-description">{t("assets.description")}</label>
           <textarea
-            id="project-asset-description"
+            id="global-asset-description"
             rows={4}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
@@ -455,18 +344,10 @@ async function invalidateAssetQueries(
   queryClient: ReturnType<typeof useQueryClient>,
 ) {
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ["assets"] }),
     queryClient.invalidateQueries({ queryKey: ["global-assets"] }),
+    queryClient.invalidateQueries({ queryKey: ["assets"] }),
     queryClient.invalidateQueries({ queryKey: ["episode-assets"] }),
   ]);
-}
-
-function readAssetScope(asset: Asset): AssetScope {
-  if (isAssetScope(asset.scope)) return asset.scope;
-  if (asset.project_id == null) return "global";
-  if (asset.episode_id != null) return "temporary";
-  const raw = asset.spec?.asset_scope;
-  return isAssetScope(raw) ? raw : "fixed";
 }
 
 function filterIcon(kind: AssetFilter) {
@@ -480,21 +361,6 @@ function filterIcon(kind: AssetFilter) {
     case "prop":
       return <Package size={15} aria-hidden />;
   }
-}
-
-function scopeIcon(scope: AssetScope, size = 15) {
-  switch (scope) {
-    case "global":
-      return <Globe2 size={size} aria-hidden />;
-    case "fixed":
-      return <Archive size={size} aria-hidden />;
-    case "temporary":
-      return <Clock3 size={size} aria-hidden />;
-  }
-}
-
-function isAssetScope(value: unknown): value is AssetScope {
-  return value === "global" || value === "fixed" || value === "temporary";
 }
 
 function mediaUrl(uri: string): string {

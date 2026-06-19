@@ -1,6 +1,6 @@
 /** Root layout and URL routes for the page flow in docs/04 §2. */
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Clapperboard, FolderKanban } from "lucide-react";
+import { ArrowLeft, Clapperboard, FolderKanban, Globe2 } from "lucide-react";
 import {
   Link,
   Navigate,
@@ -14,6 +14,7 @@ import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { CanvasWorkshop } from "./pages/CanvasWorkshop";
+import { GlobalAssetsPage } from "./pages/GlobalAssetsPage";
 import "./App.css";
 
 function App() {
@@ -42,7 +43,7 @@ function App() {
             </span>
           </Link>
           <div className="topbar-actions">
-            <nav className="topnav" aria-label={t("nav.projects")}>
+            <nav className="topnav" aria-label={t("nav.main")}>
               <NavLink
                 to="/projects"
                 className={({ isActive }) =>
@@ -51,6 +52,15 @@ function App() {
               >
                 <FolderKanban size={16} aria-hidden />
                 <span>{t("nav.projects")}</span>
+              </NavLink>
+              <NavLink
+                to="/assets"
+                className={({ isActive }) =>
+                  isActive ? "navlink active" : "navlink"
+                }
+              >
+                <Globe2 size={16} aria-hidden />
+                <span>{t("nav.globalAssets")}</span>
               </NavLink>
             </nav>
             <LanguageSwitcher />
@@ -69,6 +79,7 @@ function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/assets" element={<GlobalAssetsPage />} />
           <Route path="/projects/:projectUid" element={<ProjectRoute />} />
           <Route
             path="/projects/:projectUid/episodes/:episodeId/workshop"

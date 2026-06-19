@@ -50,19 +50,31 @@ POST   /api/projects/{project_uid}/plan   运行 02 剧集策划 → Bible + Epi
 
 `Project.id` 是数据库内部自增主键；对前端 URL/API path 暴露的是 `Project.uid`，创建项目与项目列表都会返回该字段。
 
-### 3.2 项目资产（ADR-005）
+### 3.2 三层资产（ADR-005）
 
-资产挂在项目路径下。所有列表、创建、详情、删除都必须带 `project_uid`，画布编译生成请求时也按 episode 所属项目校验 `Asset.project_id`。
+资产按全局 / 项目固定 / 单集临时三层披露。全局资产走 `/api/assets`，可被所有项目和分集引用；项目固定资产挂在项目路径下；单集临时资产挂在 episode 路径下。画布编译生成请求时按 episode 校验可见性：`global` + 当前项目 `fixed` + 当前 episode `temporary`。
 
 ```
-GET    /api/projects/{project_uid}/assets             项目资产列表（可按 ?kind= 过滤）
-POST   /api/projects/{project_uid}/assets             创建当前项目资产
-GET    /api/projects/{project_uid}/assets/{asset_id}  当前项目资产详情
-DELETE /api/projects/{project_uid}/assets/{asset_id}  删除当前项目资产
-POST   /api/projects/{project_uid}/assets/generate    触发 04/05 出图 → 返回 job（规划）
+GET    /api/assets                                      全局资产列表（可按 ?kind= 过滤）
+POST   /api/assets                                      创建全局资产
+GET    /api/assets/{asset_id}                           全局资产详情
+PATCH  /api/assets/{asset_id}                           修改全局资产信息 / 图片
+DELETE /api/assets/{asset_id}                           删除全局资产
+
+GET    /api/projects/{project_uid}/assets               项目层可见资产（全局 + 当前项目固定）
+POST   /api/projects/{project_uid}/assets               创建当前项目固定资产（也可显式 scope=global）
+GET    /api/projects/{project_uid}/assets/{asset_id}    项目层可见资产详情
+PATCH  /api/projects/{project_uid}/assets/{asset_id}    修改当前项目固定资产信息 / 图片
+DELETE /api/projects/{project_uid}/assets/{asset_id}    删除当前项目固定资产
+
+GET    /api/episodes/{episode_id}/assets                EP 工坊可见资产（全局 + 项目固定 + 本集临时）
+POST   /api/episodes/{episode_id}/assets                创建当前单集临时资产（也可显式 fixed/global）
+PATCH  /api/episodes/{episode_id}/assets/{asset_id}     修改当前单集临时资产信息 / 图片
+DELETE /api/episodes/{episode_id}/assets/{asset_id}     删除当前单集临时资产
+POST   /api/projects/{project_uid}/assets/generate      触发 04/05 出图 → 返回 job（规划）
 ```
 
-> 不提供 `/api/assets` 全局命名空间，也不提供项目↔资产关联端点。画布资产节点的 `ref_id` 指向 `Asset.id`，但该 id 只有在 `Asset.project_id == Episode.project_id` 时才可被编译进生成请求。
+> `Asset.source_asset_id` 可让项目固定资产或单集临时资产指向同一个全局源资产。画布资产节点的 `ref_id` 仍指向 `Asset.id`，但该 id 只有在当前 episode 可见时才可被编译进生成请求。
 
 ### 3.3 分集与画布
 

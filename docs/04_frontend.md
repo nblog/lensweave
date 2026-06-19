@@ -33,12 +33,12 @@ src/i18n/
 
 ## 2. 页面流（对齐需求方描述的使用路径）
 
-资产是**项目私有资源**（ADR-005），不作为顶层全局库存在。顶层入口是项目；进入项目后，左侧承载本系列分集列表与阶段导航，右侧显示当前阶段页面内容。
+资产按**全局 / 项目固定 / 单集临时**三层披露（ADR-005）。顶层入口仍是项目；进入项目后，左侧承载本系列分集列表与阶段导航，右侧显示当前阶段页面内容。资产 stage 展示三层资产，临时资产以左侧当前选中的分集为边界。
 
 页面流由 URL 路由承载，而不是用全局 nav/store 模拟页面状态：`/projects` 是项目列表，`/projects/:projectUid` 是项目工作台，`/projects/:projectUid/episodes/:episodeId/workshop` 是 EP 工坊。`projectUid` 来自后端 `Project.uid`，不使用数据库自增 `id`。项目工作台内部的剧本/资产 stage 是本页状态；涉及具体分集画布时再进入真实路由。
 
 ```
-顶栏导航： [项目]   ………………………………………… [语言切换]
+顶栏导航： [项目] [全局资产]  …………………………… [语言切换]
             │
             ▼
    ┌─────────────┐
@@ -51,20 +51,20 @@ src/i18n/
    ┌──────────────────────────────────────────────┐
    │ 左侧：本系列分集 + stage 导航                 │
    │  ├─ 剧本                                      │
-   │  ├─ 资产                                      │ ← 当前项目私有资产
+   │  ├─ 资产                                      │ ← 全局 / 项目固定 / 当前集临时资产
    │  └─ 工坊（进入某一集 EPXX）                   │
    │ 右侧：当前 stage 的页面内容                   │
    └──────────────────────────────────────────────┘
             │  进入某一集 EPXX
             ▼
    ┌──────────────────┐
-   │   EP 工坊画布      │  ← 本系统的核心交互；只引用当前项目资产
+   │   EP 工坊画布      │  ← 本系统的核心交互；引用当前 episode 可见资产
    └──────────────────┘
 ```
 
-### 2.1 顶层导航（项目）
+### 2.1 顶层导航（项目 / 全局资产）
 
-顶栏提供"项目"入口与语言切换。资产不在顶层出现，避免用户误以为素材可跨项目共享；资产管理进入项目后在项目工作台右侧完成。
+顶栏提供"项目"、"全局资产"入口与语言切换。`/projects` 是项目列表；`/assets` 是全局资产库，只展示和上传 `scope=global` 的源资产。项目固定资产与单集临时资产仍进入项目工作台右侧管理。
 
 ### 2.2 创建项目（项目入口首屏）
 
@@ -80,9 +80,9 @@ src/i18n/
 
 ### 2.4 项目资产页
 
-项目页右侧的资产 stage 是**展示型资产库**，只展示当前项目已有资产（人物 / 道具 / 场景），不在这里创建、上传、删除或触发生成。布局参考"固定资产 / 临时资产 + 类型筛选 + 分组卡片"：顶部显示固定资产与临时资产切换（当前只启用固定资产），再按全部 / 角色 / 场景 / 道具过滤；内容区按资产类型分组展示卡片。卡片显示资产图、名称、类型、出场次数占位与描述；无图资产显示"暂无形象 / 待补图"占位。资产是画布 `ImageNode` 的来源；EP 工坊只从当前项目资产列表选择引用。
+项目页右侧的资产 stage 是**三层资产库**，展示并允许上传人物 / 道具 / 场景资产。顶部范围切换顺序是：全局资产 → 项目资产（固定资产）→ 临时资产（当前选中分集）。用户上传图片、选择资产范围、类型、名称和描述后，按范围分别提交 `POST /api/assets`、`POST /api/projects/{project_uid}/assets` 或 `POST /api/episodes/{episode_id}/assets`；图片预览框支持点击聚焦后直接粘贴剪贴板图片。内容区继续按资产类型分组展示卡片，桌面端采用受控五列网格，窄屏逐级降列，保证卡片大小稳定。卡片显示资产图、名称、类型、出场次数占位与描述；无图资产显示"暂无形象 / 待补图"占位。点击卡片打开资产编辑模态窗，可修改类型、名称、描述、替换 / 清空图片，并按资产层级调用对应的 `PATCH` 接口；删除资产必须二次确认，并按全局 / 项目固定 / 单集临时分别调用对应删除接口。资产是画布 `ImageNode` 的来源；EP 工坊从 `GET /api/episodes/{episode_id}/assets` 读取当前可见资产（全局 + 当前项目固定 + 当前单集临时）。
 
-> 破坏性 / 难撤销操作统一走 `src/components/ConfirmDialog.tsx` 的 `useConfirm()`（返回 `Promise<boolean>`）：删除画布节点、覆盖已有上传图像等操作都 `await confirm(...)`，护栏一致且 DRY。资产展示页不提供破坏性操作。
+> 破坏性 / 难撤销操作统一走 `src/components/ConfirmDialog.tsx` 的 `useConfirm()`（返回 `Promise<boolean>`）：删除画布节点、覆盖已有上传图像等操作都 `await confirm(...)`，护栏一致且 DRY。
 
 > 时间戳显示（创建于 / 上次保存 / 生成于）统一走 `src/utils/datetime.ts` 的 `formatTimestamp`（`YYYY-MM-DD HH:mm`），画布内的 `formatCanvasTimestamp` 是其薄封装，避免同一概念散落多套格式。
 
@@ -99,7 +99,7 @@ src/i18n/
 | 节点 | 输出类型 | 来源 / 内容 |
 |---|---|---|
 | 文本（TextNode） | text | 手填文本，或绑定 segment 的 `visual_prompt`（`ref_id`→Segment） |
-| 图像（ImageNode） | image | 引用当前项目资产（`ref_id`→Asset，含人物/道具/场景语义），或上游生成产物 |
+| 图像（ImageNode） | image | 引用当前 episode 可见资产（`ref_id`→Asset，含人物/道具/场景语义），或上游生成产物 |
 | 视频（VideoNode） | video | 上游 VideoGen 的产物 |
 
 适配器节点（有类型化输入口 + 一个输出口）：
@@ -123,7 +123,7 @@ src/i18n/
 
 ### 3.3 右侧节点编辑面板
 
-选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前项目资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。`ImageGenNode` 的生成图双击打开完整预览，左下角收藏按钮打开"保存为项目资产"模态窗；该模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
+选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前 episode 可见资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。`ImageGenNode` 的生成图双击打开完整预览，左下角收藏按钮打开"保存为资产"模态窗；该模态窗默认保存到当前项目资产，用户可切换为全局资产，并在项目资产下选择固定 / 临时。模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ### 3.4 前端即护栏：端口类型校验
 
@@ -143,7 +143,7 @@ src/i18n/
 
 ### 3.6 触发生成与播放
 
-适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点卡片上实时显示 `queued/running/succeeded` 状态、生成中 loading 覆盖层与已用时间，成功后产物回填到当前生成节点并可内嵌播放。图像生成产物可从节点卡片收藏为当前项目资产，提交 `POST /api/projects/{project_uid}/assets` 并刷新项目资产查询。任务结束后把最终耗时写入 `CanvasNode.data.generation_elapsed_ms`，刷新画布后仍能看到上次生成用时。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
+适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点卡片上实时显示 `queued/running/succeeded` 状态、生成中 loading 覆盖层与已用时间，成功后产物回填到当前生成节点并可内嵌播放。图像生成产物可从节点卡片收藏为资产：默认提交 `POST /api/projects/{project_uid}/assets` 写入当前项目固定资产；选择临时资产时提交 `POST /api/episodes/{episode_id}/assets`；选择全局资产时提交 `POST /api/assets`。保存后刷新当前 episode 可见资产查询。任务结束后把最终耗时写入 `CanvasNode.data.generation_elapsed_ms`，刷新画布后仍能看到上次生成用时。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
 
 ## 4. 状态管理
 
