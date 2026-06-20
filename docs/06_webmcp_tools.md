@@ -28,10 +28,18 @@ AI Client                      浏览器内
 | 件 | 选型 | 作用 |
 |---|---|---|
 | SDK | `webmcp-nexus-sdk` | `registerGlobalTools` / `useWebMcpTools` 把 TS 函数注册到 `navigator.modelContext` |
-| 构建插件 | `vite-plugin-webmcp-nexus`（`vitePluginWebMcp`） | 构建期从 TS 类型 + JSDoc 抽取工具 schema，注入 `__webmcpSchema` |
+| 构建插件 | 本地 `vite-webmcp-plugin.ts`（包装 `webmcp-nexus-core` 的 `transformCode`） | 构建期从 TS 类型 + JSDoc 抽取工具 schema，注入 `__webmcpSchema` |
 | 本地桥 | `@mcp-b/webmcp-local-relay`（`embed.js`） | 注入隐藏 iframe，把 `navigator.modelContext` 桥到本地 WebSocket，给本地 MCP 客户端接入 |
 
 **仅作开发/实验期的可视化操控层**：WebMCP 仍在演进（Chrome 已提示 `navigator.modelContext` 在未来版本迁移到 `document.modelContext`），故工具层是可替换的薄桥，核心业务不绑死在它上面。若日后需要"无浏览器、无人值守批量生成"，另做后端 MCP server（不属于本文范围）。
+
+### 1.1 Schema 抽取机制（维护者须知）
+
+schema 抽取是**逆向追踪**：构建插件扫描 `registerGlobalTools()` / `useWebMcpTools()` 的**调用点**，从那里回溯到被注册的函数定义，再用 ts-morph 解析参数类型 + JSDoc，把 `__webmcpSchema` 注入到**调用点所在文件**（即 `src/mcp/register.ts` 的 `tools.drama_*.__webmcpSchema`），而**不是**注入到 `tools.ts`。因此：
+
+- `register.ts` 用 `import * as tools from "./tools"` 的 namespace import 是必须的——抽取器靠它解析源模块的所有导出函数。
+- 插件 `include` 必须覆盖 `register.ts`（当前 `src/mcp/**/*.ts` 即可）。单独 transform `tools.ts` 会因找不到注册调用而 `transformed: false`，这是预期行为。
+- 不直接用官方 `vite-plugin-webmcp-nexus`：它在 Windows 上用 `path.relative` 得到反斜杠路径去匹配只认 `/` 的 glob，导致无文件命中、schema 永不注入。本地 `vite-webmcp-plugin.ts` 包装同一个官方 `webmcp-nexus-core`（抽取逻辑不变），只在 include 匹配前把分隔符归一化为 `/`，跨平台一致。
 
 ---
 
@@ -86,6 +94,8 @@ AI Client                      浏览器内
 
 ### 3.2 第二阶段（细粒度编辑：AI 可修正画布而非每次重建）
 
+> 已实现。这些工具让 AI 增量纠正画布（按稳定 id idempotent upsert），而不是每次重建整张图。
+
 | 工具 | readonly | 作用 |
 |---|---|---|
 | `drama_upsert_text_node` | | 按稳定 id 新建/更新文本节点（文本内容、可选绑定 segment） |
@@ -109,7 +119,7 @@ AI Client                      浏览器内
 
 WebMCP 工具是构建期抽取的**顶层导出函数**，无法访问 React 组件内的 `useState`。因此画布状态必须放在**模块级 store（zustand）**，工具操作该 store，并复用同一份 `flowToDto` / `saveCanvas` 路径。这同时落实了 [04 §4](04_frontend.md) 早已规定的"画布本地态用 Zustand"。
 
-- `src/stores/canvasStore.ts`：持有 `nodes` / `edges`，暴露业务动作（`upsertTextNode` / `upsertImageNode` / `upsertAdapterNode` / `connectNodes` / `setVideoParams` / `deleteNode` / `buildShotVideoGraph` / `loadFromDto` / `toDto` / `persist` / `runVideoNode` 等）。
+- `src/stores/canvasStore.ts`：持有 `nodes` / `edges`，暴露业务动作（`upsertTextNode` / `upsertImageNode` / `upsertAdapterNode` / `connectNodes` / `setVideoParams` / `deleteNode` / `buildShotVideoGraph` / `loadFromDto` / `toDto` / `persist` / `runNode` 等；`runNode` 对 text_gen/image_gen/video_gen 通用）。
 - `CanvasWorkshop.tsx` 消费该 store（替代组件内 `useNodesState`/`useEdgesState`），UI 与工具操作同一份状态——AI 调用时画布**实时长出节点**，这正是"看着 AI 搭画布"的演示价值所在。
 - `src/mcp/tools.ts`：顶层导出的工具函数，调用 `useCanvasStore.getState()` 上的业务动作；带标准 JSDoc + 单对象参数（schema 抽取硬要求）。
 - 注册入口：`registerGlobalTools(tools)`（应用启动一次）。
