@@ -26,7 +26,7 @@ const en = {
     empty: "No projects yet. Create your first one to get started.",
     createdAt: "Created",
     loading: "Loading…",
-    error: "Failed to reach the backend. Is the server running on :8770?",
+    error: "Failed to reach the backend. Is the server running?",
     open: "Open",
   },
   assets: {

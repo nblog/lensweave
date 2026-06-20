@@ -26,7 +26,7 @@ const zh = {
     empty: "还没有项目。创建第一个项目开始吧。",
     createdAt: "创建于",
     loading: "加载中…",
-    error: "无法连接后端。服务是否已在 :8770 启动？",
+    error: "无法连接后端。服务是否已启动？",
     open: "打开",
   },
   assets: {

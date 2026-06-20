@@ -1,0 +1,11 @@
+{
+    "servers": {
+        "webmcp-local-relay": {
+            "command": "npx",
+            "args": [
+                "-y",
+                "@mcp-b/webmcp-local-relay@latest"
+            ]
+        }
+    }
+}
