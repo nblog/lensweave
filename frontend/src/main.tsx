@@ -9,6 +9,11 @@ import { ConfirmProvider } from "./components/ConfirmDialog";
 
 const queryClient = new QueryClient();
 
+// Dev-only: register WebMCP canvas tools + local relay bridge (docs/06 §5).
+if (import.meta.env.DEV) {
+  void import("./mcp/register").then((m) => m.startWebMcp());
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>

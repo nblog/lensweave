@@ -150,11 +150,13 @@ src/i18n/
 | 态 | 工具 | 范围 |
 |---|---|---|
 | 服务端态 | TanStack Query | 项目/资产/分集/job，带缓存与轮询 |
-| 画布本地态 | Zustand | 节点位置、选中、未保存的连线编辑 |
+| 画布本地态 | Zustand | 画布**节点与连线**、节点位置、选中、未保存的编辑 |
 | 语言偏好 | localStorage | i18n 选择 |
 | 生成通道偏好 | localStorage | EP 工坊通道下拉（mock/routin） |
 
 画布"保存"显式调 `PUT /canvas` 持久化；本地编辑先进 Zustand，避免每次拖拽都打后端。
+
+画布的节点/连线状态持有在模块级 store（`src/stores/canvasStore.ts`），而非 `CanvasWorkshop` 组件内的 `useState`。原因有二：其一，这本就是上表"画布本地态用 Zustand"的落地；其二，[06 WebMCP 工具层](06_webmcp_tools.md) 的工具是构建期抽取的顶层导出函数，无法访问组件内 state，只能操作模块级 store。store 暴露画布业务动作（upsert/connect/setParams/delete/buildShotVideoGraph/persist/run*），UI 与 AI 工具共享同一份状态，故 AI 调用时画布实时更新。`CanvasNode.data` 的编辑结果随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ## 5. 接口客户端
 

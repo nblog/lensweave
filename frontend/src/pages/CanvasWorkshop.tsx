@@ -24,10 +24,6 @@ import {
   MiniMap,
   Handle,
   Position,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  type Connection,
   type Edge,
   type Node,
   type NodeProps,
@@ -56,44 +52,34 @@ import {
   type Asset,
   type AssetKind,
   type AssetScope,
-  type CanvasGraphDTO,
   type GenerationChannel,
   type Job,
   type NodeKind,
   type SegmentRow,
-  type VideoGenSettings,
 } from "../api/client";
+import {
+  ADAPTER_INPUTS,
+  buildOrderedInputsByNodeId,
+  currentRunElapsedMs,
+  hasVideoPromptInput,
+  normalizeVideoDuration,
+  normalizeVideoResolution,
+  patchNodes,
+  type CanvasNode,
+  type InputSummary,
+  type NodeData,
+  type NodeRunState,
+} from "../canvas/graph";
+import {
+  publishAssetSnapshot,
+  useCanvasStore,
+} from "../stores/canvasStore";
 import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
 import {
   ImagePreviewDialog,
   type ImagePreviewState,
 } from "../components/ImagePreviewDialog";
 import { useConfirm } from "../components/confirm-context";
-import { formatTimestamp } from "../utils/datetime";
-
-type NodeData = {
-  kind: NodeKind;
-  label: string;
-  refId: number | null;
-  text?: string;
-  imageUrl?: string;
-  videoUrl?: string;
-  clipPath?: string | null;
-  videoDuration?: number;
-  videoResolution?: string;
-  jobId?: string;
-  jobStatus?: Job["status"];
-  jobError?: string | null;
-  generatedAt?: string;
-  generationStartedAt?: number;
-  generationElapsedMs?: number;
-};
-
-type InputSummary = {
-  id: string;
-  label: string;
-  kind: NodeKind;
-};
 
 type RuntimeNodeData = NodeData & {
   assets: Asset[];
@@ -111,11 +97,6 @@ type RuntimeNodeData = NodeData & {
   onRenderVideo: (id: string) => void;
 };
 
-type CanvasNode = Node<NodeData, "canvasNode">;
-type NodeRunState = Pick<
-  NodeData,
-  "jobStatus" | "generatedAt" | "generationStartedAt" | "generationElapsedMs"
->;
 type GeneratedAssetDialogState = {
   nodeId: string;
   imageUri: string;
@@ -125,34 +106,9 @@ type GeneratedAssetDialogState = {
 type GeneratedAssetTarget = "project" | "global";
 type ProjectGeneratedAssetScope = Extract<AssetScope, "fixed" | "temporary">;
 
-// Port type produced by each node kind, and inputs each adapter accepts —
-// mirrors the backend enums (docs/01 §2.3) so the frontend guardrail matches.
-type PortType = "text" | "image" | "video";
-const NODE_OUTPUT: Record<NodeKind, PortType> = {
-  text: "text",
-  image: "image",
-  video: "video",
-  text_gen: "text",
-  image_gen: "image",
-  video_gen: "video",
-};
-const ADAPTER_INPUTS: Partial<Record<NodeKind, PortType[]>> = {
-  text_gen: ["text"],
-  image_gen: ["text", "image"],
-  video_gen: ["text", "image"],
-};
-
-const TERMINAL_JOB_STATUSES: Job["status"][] = [
-  "succeeded",
-  "failed",
-  "canceled",
-];
 const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "prop", "scene"];
 const GENERATION_CHANNEL_STORAGE_KEY = "ai-drama:generation-channel";
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeCard };
-
-let idCounter = 0;
-const nextId = (p: string) => `${p}-${++idCounter}`;
 
 export function CanvasWorkshop({
   projectUid,
@@ -178,11 +134,25 @@ export function CanvasWorkshop({
     queryFn: () => api.listSegments(episodeId),
   });
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<CanvasNode>([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  // Canvas node/edge state lives in the module-level store (docs/04 §4,
+  // docs/06 §4) so the WebMCP tools and the UI share one graph.
+  const nodes = useCanvasStore((s) => s.nodes);
+  const edges = useCanvasStore((s) => s.edges);
+  const setNodes = useCanvasStore((s) => s.setNodes);
+  const onNodesChange = useCanvasStore((s) => s.onNodesChange);
+  const onEdgesChange = useCanvasStore((s) => s.onEdgesChange);
+  const storeConnect = useCanvasStore((s) => s.connect);
+  const addNodeToStore = useCanvasStore((s) => s.addNode);
+  const reorderInput = useCanvasStore((s) => s.reorderInput);
+  const renderingNodeId = useCanvasStore((s) => s.renderingNodeId);
+  const savedAt = useCanvasStore((s) => s.savedAt);
+  const setContext = useCanvasStore((s) => s.setContext);
+  const loadFromDto = useCanvasStore((s) => s.loadFromDto);
+  const resetCanvas = useCanvasStore((s) => s.reset);
+  const persist = useCanvasStore((s) => s.persist);
+  const runNode = useCanvasStore((s) => s.runNode);
+
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [savedAt, setSavedAt] = useState<string>("");
-  const [renderingNodeId, setRenderingNodeId] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<ImagePreviewState | null>(
     null,
   );
@@ -193,6 +163,21 @@ export function CanvasWorkshop({
   );
   const [elapsedNow, setElapsedNow] = useState(() => Date.now());
   const draggedInputIdRef = useRef<string | null>(null);
+
+  // Publish episode + catalog context into the store so store actions (and the
+  // WebMCP tools) have what they need.
+  useEffect(() => {
+    setContext({ episodeId, videoSettings: videoSettings.data });
+  }, [episodeId, videoSettings.data, setContext]);
+
+  // Publish an asset snapshot for the tools' name->id resolution (docs/06 §2.8).
+  useEffect(() => {
+    if (assets.data) {
+      publishAssetSnapshot(
+        assets.data.map((a) => ({ id: a.id, name: a.name })),
+      );
+    }
+  }, [assets.data]);
 
   useEffect(() => {
     if (!previewImage) return;
@@ -218,12 +203,9 @@ export function CanvasWorkshop({
   }, [renderingNodeId]);
 
   useEffect(() => {
+    resetCanvas();
     void api.getCanvas(episodeId).then((graph) => {
-      const loaded = dtoToFlow(graph);
-      if (loaded.nodes.length) {
-        setNodes(loaded.nodes);
-        setEdges(loaded.edges);
-      }
+      loadFromDto(graph);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [episodeId]);
@@ -327,50 +309,11 @@ export function CanvasWorkshop({
     [confirm, t],
   );
 
-  const onConnect = useCallback(
-    (conn: Connection) => {
-      const src = nodes.find((n) => n.id === conn.source);
-      const tgt = nodes.find((n) => n.id === conn.target);
-      if (!src || !tgt) return;
-      const accepts = ADAPTER_INPUTS[tgt.data.kind];
-      if (!accepts) return; // data nodes accept no input
-      if (!accepts.includes(NODE_OUTPUT[src.data.kind])) return; // type mismatch
-      const order = edges.filter((e) => e.target === conn.target).length + 1;
-      setEdges((eds) => addEdge({ ...conn, data: { order } }, eds));
-    },
-    [nodes, edges, setEdges],
-  );
-
   const addNode = (kind: NodeKind, label: string) => {
-    const id = nextId(kind);
-    const data: NodeData = {
-      kind,
-      label,
-      refId: null,
-      ...(kind === "video_gen"
-        ? {
-            videoDuration: videoSettings.data?.duration.default,
-            videoResolution: videoSettings.data?.resolution.default,
-          }
-        : {}),
-    };
-    setNodes((ns) => [
-      ...ns,
-      {
-        id,
-        position: { x: 80 + ns.length * 36, y: 70 + ns.length * 28 },
-        data,
-        type: "canvasNode",
-      },
-    ]);
+    addNodeToStore(kind, label);
   };
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
-
-  const graphDto: CanvasGraphDTO = useMemo(
-    () => flowToDto(episodeId, nodes, edges, videoSettings.data),
-    [episodeId, nodes, edges, videoSettings.data],
-  );
 
   const orderedInputsByNodeId = useMemo(
     () => buildOrderedInputsByNodeId(nodes, edges),
@@ -379,188 +322,37 @@ export function CanvasWorkshop({
 
   const reorderOrderedInput = useCallback(
     (targetId: string, sourceId: string, targetSourceId: string) => {
-      setEdges((eds) => {
-        const inputEdges = eds
-          .filter((e) => e.target === targetId)
-          .sort(
-            (a, b) =>
-              ((a.data as { order?: number })?.order ?? 0) -
-              ((b.data as { order?: number })?.order ?? 0),
-          );
-        const sourceIndex = inputEdges.findIndex((e) => e.source === sourceId);
-        const targetIndex = inputEdges.findIndex((e) => e.source === targetSourceId);
-        if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) {
-          return eds;
-        }
-        const reordered = [...inputEdges];
-        const [moved] = reordered.splice(sourceIndex, 1);
-        const insertIndex = sourceIndex < targetIndex ? targetIndex : targetIndex;
-        reordered.splice(insertIndex, 0, moved);
-        const orderByEdgeId = new Map(
-          reordered.map((edge, orderIndex) => [edge.id, orderIndex + 1]),
-        );
-        return eds.map((edge) =>
-          edge.target === targetId && orderByEdgeId.has(edge.id)
-            ? {
-                ...edge,
-                data: {
-                  ...(edge.data as Record<string, unknown> | undefined),
-                  order: orderByEdgeId.get(edge.id),
-                },
-              }
-            : edge,
-        );
-      });
+      reorderInput(targetId, sourceId, targetSourceId);
     },
-    [setEdges],
+    [reorderInput],
   );
 
   const handleSave = async () => {
-    await api.saveCanvas(episodeId, graphDto);
-    setSavedAt(formatCanvasTimestamp());
+    await persist();
   };
 
-  const saveNodesSnapshot = useCallback(
-    async (nextNodes: CanvasNode[]) => {
-      await api.saveCanvas(
-        episodeId,
-        flowToDto(episodeId, nextNodes, edges, videoSettings.data),
-      );
-      setSavedAt(formatCanvasTimestamp());
-    },
-    [edges, episodeId, videoSettings.data],
-  );
-
   const handleGenerateText = useCallback(
-    async (nodeId: string) => {
-      const startedAt = Date.now();
-      setElapsedNow(startedAt);
-      setRenderingNodeId(nodeId);
-      let latestNodes = patchNodes(
-        nodes,
-        nodeId,
-        createGenerationStartPatch(startedAt),
-      );
-      setNodes(latestNodes);
-
-      try {
-        await saveNodesSnapshot(latestNodes);
-        let current = await api.submitText(episodeId, nodeId, generationChannel);
-        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current, startedAt));
-        setNodes(latestNodes);
-        while (!TERMINAL_JOB_STATUSES.includes(current.status)) {
-          await wait(1000);
-          current = await api.getJob(current.id);
-          latestNodes = patchNodes(
-            latestNodes,
-            nodeId,
-            patchForJob(current, startedAt),
-          );
-          setNodes(latestNodes);
-        }
-        await saveNodesSnapshot(latestNodes);
-      } catch (error) {
-        latestNodes = patchNodes(
-          latestNodes,
-          nodeId,
-          patchForGenerationError(error, startedAt),
-        );
-        setNodes(latestNodes);
-        await saveNodesSnapshot(latestNodes).catch(() => undefined);
-      } finally {
-        setRenderingNodeId((current) => (current === nodeId ? null : current));
-      }
+    (nodeId: string) => {
+      setElapsedNow(Date.now());
+      void runNode(nodeId, generationChannel).catch(() => undefined);
     },
-    [episodeId, generationChannel, nodes, saveNodesSnapshot, setNodes],
+    [generationChannel, runNode],
   );
 
   const handleGenerateImage = useCallback(
-    async (nodeId: string) => {
-      const startedAt = Date.now();
-      setElapsedNow(startedAt);
-      setRenderingNodeId(nodeId);
-      let latestNodes = patchNodes(
-        nodes,
-        nodeId,
-        createGenerationStartPatch(startedAt, { imageUrl: undefined }),
-      );
-      setNodes(latestNodes);
-
-      try {
-        await saveNodesSnapshot(latestNodes);
-        let current = await api.submitImage(episodeId, nodeId, generationChannel);
-        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current, startedAt));
-        setNodes(latestNodes);
-        while (!TERMINAL_JOB_STATUSES.includes(current.status)) {
-          await wait(1000);
-          current = await api.getJob(current.id);
-          latestNodes = patchNodes(
-            latestNodes,
-            nodeId,
-            patchForJob(current, startedAt),
-          );
-          setNodes(latestNodes);
-        }
-        await saveNodesSnapshot(latestNodes);
-      } catch (error) {
-        latestNodes = patchNodes(
-          latestNodes,
-          nodeId,
-          patchForGenerationError(error, startedAt),
-        );
-        setNodes(latestNodes);
-        await saveNodesSnapshot(latestNodes).catch(() => undefined);
-      } finally {
-        setRenderingNodeId((current) => (current === nodeId ? null : current));
-      }
+    (nodeId: string) => {
+      setElapsedNow(Date.now());
+      void runNode(nodeId, generationChannel).catch(() => undefined);
     },
-    [episodeId, generationChannel, nodes, saveNodesSnapshot, setNodes],
+    [generationChannel, runNode],
   );
 
   const handleRenderVideo = useCallback(
-    async (nodeId: string) => {
-      const startedAt = Date.now();
-      setElapsedNow(startedAt);
-      setRenderingNodeId(nodeId);
-      let latestNodes = patchNodes(
-        nodes,
-        nodeId,
-        createGenerationStartPatch(startedAt, {
-          clipPath: null,
-          videoUrl: undefined,
-        }),
-      );
-      setNodes(latestNodes);
-      try {
-        await saveNodesSnapshot(latestNodes);
-        const submitted = await api.submitVideo(episodeId, nodeId, generationChannel);
-        let current = submitted;
-        latestNodes = patchNodes(latestNodes, nodeId, patchForJob(current, startedAt));
-        setNodes(latestNodes);
-        while (!TERMINAL_JOB_STATUSES.includes(current.status)) {
-          await wait(1000);
-          current = await api.getJob(submitted.id);
-          latestNodes = patchNodes(
-            latestNodes,
-            nodeId,
-            patchForJob(current, startedAt),
-          );
-          setNodes(latestNodes);
-        }
-        await saveNodesSnapshot(latestNodes);
-      } catch (error) {
-        latestNodes = patchNodes(
-          latestNodes,
-          nodeId,
-          patchForGenerationError(error, startedAt),
-        );
-        setNodes(latestNodes);
-        await saveNodesSnapshot(latestNodes).catch(() => undefined);
-      } finally {
-        setRenderingNodeId((current) => (current === nodeId ? null : current));
-      }
+    (nodeId: string) => {
+      setElapsedNow(Date.now());
+      void runNode(nodeId, generationChannel).catch(() => undefined);
     },
-    [episodeId, generationChannel, nodes, saveNodesSnapshot, setNodes],
+    [generationChannel, runNode],
   );
 
   // Ordered inputs of the selected adapter node (for the inspector list).
@@ -683,7 +475,7 @@ export function CanvasWorkshop({
             nodeTypes={nodeTypes}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
+            onConnect={storeConnect}
             onNodeClick={(_, n) => setSelectedId(n.id)}
             onPaneClick={() => setSelectedId(null)}
             onBeforeDelete={handleBeforeDelete}
@@ -1137,71 +929,6 @@ function updateNode(
   setNodes((ns) => patchNodes(ns, id, patch));
 }
 
-function patchNodes(
-  nodes: CanvasNode[],
-  id: string,
-  patch: Partial<NodeData>,
-): CanvasNode[] {
-  return nodes.map((n) =>
-    n.id === id ? { ...n, data: { ...n.data, ...patch } } : n,
-  );
-}
-
-function createGenerationStartPatch(
-  startedAt: number,
-  patch: Partial<NodeData> = {},
-): Partial<NodeData> {
-  return {
-    ...patch,
-    jobId: undefined,
-    jobStatus: "queued",
-    jobError: null,
-    generatedAt: undefined,
-    generationStartedAt: startedAt,
-    generationElapsedMs: 0,
-  };
-}
-
-function patchForGenerationError(
-  error: unknown,
-  startedAt: number,
-): Partial<NodeData> {
-  return {
-    jobStatus: "failed",
-    jobError: error instanceof Error ? error.message : String(error),
-    generatedAt: formatCanvasTimestamp(),
-    generationStartedAt: undefined,
-    generationElapsedMs: elapsedMsSince(startedAt),
-  };
-}
-
-function patchForJob(job: Job, startedAt?: number): Partial<NodeData> {
-  const result = job.result ?? {};
-  const isTerminal = TERMINAL_JOB_STATUSES.includes(job.status);
-  const patch: Partial<NodeData> = {
-    jobId: job.id,
-    jobStatus: job.status,
-    jobError: job.error,
-  };
-  if (typeof startedAt === "number") {
-    patch.generationElapsedMs = elapsedMsSince(startedAt);
-    patch.generationStartedAt = isTerminal ? undefined : startedAt;
-  }
-  if (isTerminal) {
-    patch.generatedAt = formatCanvasTimestamp();
-  }
-  if (typeof result.text === "string") {
-    patch.text = result.text;
-  }
-  const imageUri = readString(result.image_url) ?? readString(result.image_path);
-  if (imageUri) {
-    patch.imageUrl = imageUri;
-  }
-  patch.clipPath = readString(result.clip_path) ?? null;
-  patch.videoUrl = readString(result.video_url);
-  return patch;
-}
-
 function NodeGenerationOverlay({ node }: { node: RuntimeNodeData }) {
   const { t } = useTranslation();
   const elapsedMs = currentRunElapsedMs(node, node.nowMs);
@@ -1634,145 +1361,7 @@ function GeneratedAssetDialog({
   );
 }
 
-// --- flow <-> dto conversion ---
-
-function flowToDto(
-  episodeId: number,
-  nodes: CanvasNode[],
-  edges: Edge[],
-  videoSettings?: VideoGenSettings,
-): CanvasGraphDTO {
-  return {
-    episode_id: episodeId,
-    nodes: nodes.map((n) => ({
-      id: n.id,
-      kind: n.data.kind,
-      name: n.data.label,
-      ref_id: n.data.refId,
-      position: [n.position.x, n.position.y],
-      data: nodeDataToPayload(n.data, videoSettings),
-    })),
-    edges: edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      order: (e.data as { order?: number })?.order ?? 0,
-    })),
-  };
-}
-
-function dtoToFlow(graph: CanvasGraphDTO): {
-  nodes: CanvasNode[];
-  edges: Edge[];
-} {
-  return {
-    nodes: graph.nodes.map((n) => ({
-      id: n.id,
-      position: { x: n.position[0], y: n.position[1] },
-      type: "canvasNode",
-      data: {
-        kind: n.kind,
-        label: normalizeNodeLabel(n.name, n.kind),
-        refId: n.ref_id,
-        text: readString(n.data?.visual_prompt) ?? readString(n.data?.text),
-        imageUrl: readString(n.data?.image_uri) ?? readString(n.data?.image_url),
-        videoUrl: readString(n.data?.video_url),
-        clipPath: readString(n.data?.clip_path) ?? null,
-        videoDuration: readVideoDuration(n.data?.duration),
-        videoResolution: readVideoResolution(n.data?.resolution),
-        jobId: readString(n.data?.job_id),
-        jobStatus: readJobStatus(n.data?.job_status),
-        jobError: readString(n.data?.job_error) ?? null,
-        generatedAt: readString(n.data?.generated_at),
-        generationStartedAt: readNumber(n.data?.generation_started_at),
-        generationElapsedMs: readNumber(n.data?.generation_elapsed_ms),
-      },
-    })),
-    edges: graph.edges.map((e) => ({
-      id: e.id,
-      source: e.source,
-      target: e.target,
-      data: { order: e.order },
-    })),
-  };
-}
-
-function nodeDataToPayload(
-  data: NodeData,
-  videoSettings?: VideoGenSettings,
-): Record<string, unknown> {
-  const payload: Record<string, unknown> = {};
-  if (data.text) {
-    payload.visual_prompt = data.text;
-    payload.text = data.text;
-  }
-  if (data.imageUrl) {
-    payload.image_uri = data.imageUrl;
-    payload.image_url = data.imageUrl;
-  }
-  if (data.videoUrl) payload.video_url = data.videoUrl;
-  if (data.clipPath) payload.clip_path = data.clipPath;
-  if (data.kind === "video_gen") {
-    const duration = data.videoDuration ?? videoSettings?.duration.default;
-    const resolution = data.videoResolution ?? videoSettings?.resolution.default;
-    if (duration != null) payload.duration = duration;
-    if (resolution) payload.resolution = resolution;
-  }
-  if (data.jobId) payload.job_id = data.jobId;
-  if (data.jobStatus) payload.job_status = data.jobStatus;
-  if (data.jobError) payload.job_error = data.jobError;
-  if (data.generatedAt) payload.generated_at = data.generatedAt;
-  if (typeof data.generationStartedAt === "number") {
-    payload.generation_started_at = data.generationStartedAt;
-  }
-  if (typeof data.generationElapsedMs === "number") {
-    payload.generation_elapsed_ms = data.generationElapsedMs;
-  }
-  return payload;
-}
-
-function buildOrderedInputsByNodeId(
-  nodes: CanvasNode[],
-  edges: Edge[],
-): Record<string, InputSummary[]> {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  return nodes.reduce<Record<string, InputSummary[]>>((acc, node) => {
-    if (!ADAPTER_INPUTS[node.data.kind]) return acc;
-    acc[node.id] = edges
-      .filter((e) => e.target === node.id)
-      .sort(
-        (a, b) =>
-          ((a.data as { order?: number })?.order ?? 0) -
-          ((b.data as { order?: number })?.order ?? 0),
-      )
-      .map((e) => byId.get(e.source))
-      .filter((source): source is CanvasNode => Boolean(source))
-      .map((source) => ({
-        id: source.id,
-        label: source.data.label || source.data.kind,
-        kind: source.data.kind,
-      }));
-    return acc;
-  }, {});
-}
-
-function hasVideoPromptInput(
-  nodeId: string,
-  nodes: CanvasNode[],
-  edges: Edge[],
-): boolean {
-  const byId = new Map(nodes.map((n) => [n.id, n]));
-  return edges
-    .filter((e) => e.target === nodeId)
-    .some((edge) => {
-      const source = byId.get(edge.source);
-      return (
-        source != null &&
-        NODE_OUTPUT[source.data.kind] === "text" &&
-        Boolean(source.data.text?.trim())
-      );
-    });
-}
+// --- media url helpers (UI-only) ---
 
 function imagePreviewUrl(data: NodeData, assets: Asset[] = []): string | undefined {
   if (data.imageUrl) return mediaUrl(data.imageUrl);
@@ -1798,27 +1387,6 @@ function mediaUrl(uri: string): string {
   if (/^(https?:|data:|blob:)/.test(uri)) return uri;
   if (uri.startsWith("/")) return `${BASE_URL}${uri}`;
   return uri;
-}
-
-function formatCanvasTimestamp(date = new Date()): string {
-  return formatTimestamp(date);
-}
-
-function elapsedMsSince(startedAt: number, nowMs = Date.now()): number {
-  return Math.max(0, nowMs - startedAt);
-}
-
-function currentRunElapsedMs(
-  node: NodeRunState,
-  nowMs = Date.now(),
-): number | undefined {
-  if (
-    typeof node.generationStartedAt === "number" &&
-    (node.jobStatus === "queued" || node.jobStatus === "running")
-  ) {
-    return elapsedMsSince(node.generationStartedAt, nowMs);
-  }
-  return node.generationElapsedMs;
 }
 
 function formatElapsedDuration(ms: number): string {
@@ -1848,10 +1416,6 @@ function jobStatusLabel(status: Job["status"], t: Translate): string {
   }
 }
 
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 function nodeKindLabelKey(kind: NodeKind): string {
   switch (kind) {
     case "text":
@@ -1878,12 +1442,6 @@ function canRenameNodeTitle(kind: NodeKind): boolean {
     kind === "image_gen" ||
     kind === "video_gen"
   );
-}
-
-function normalizeNodeLabel(name: string, kind: NodeKind): string {
-  if (name === "文生文" && kind === "text_gen") return "文本生成";
-  if (name === "图生成" && kind === "image_gen") return "图像生成";
-  return name || kind;
 }
 
 function assetKindLabelSuffix(kind: AssetKind): string {
@@ -1917,52 +1475,6 @@ function readAssetScope(asset: Asset): AssetScope {
 
 function isAssetScope(value: unknown): value is AssetScope {
   return value === "global" || value === "fixed" || value === "temporary";
-}
-
-function normalizeVideoDuration(
-  value: string | number,
-  settings: VideoGenSettings,
-): number {
-  const parsed = typeof value === "number" ? value : Number(value);
-  if (!Number.isFinite(parsed)) return settings.duration.default;
-  const rounded = Math.round(parsed);
-  return Math.min(settings.duration.max, Math.max(settings.duration.min, rounded));
-}
-
-function readVideoDuration(value: unknown): number | undefined {
-  return typeof value === "number" ? value : undefined;
-}
-
-function normalizeVideoResolution(value: string, settings: VideoGenSettings): string {
-  return settings.resolution.options.includes(value)
-    ? value
-    : settings.resolution.default;
-}
-
-function readVideoResolution(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  return value;
-}
-
-function readString(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function readNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-}
-
-function readJobStatus(value: unknown): Job["status"] | undefined {
-  if (
-    value === "queued" ||
-    value === "running" ||
-    value === "succeeded" ||
-    value === "failed" ||
-    value === "canceled"
-  ) {
-    return value;
-  }
-  return undefined;
 }
 
 function readStoredGenerationChannel(): GenerationChannel {

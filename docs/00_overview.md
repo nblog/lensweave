@@ -172,6 +172,16 @@ ai-drama-flow/
 
 **影响**：新增 typed catalog accessor（如 `get_seedance_video_settings()`）作为唯一入口。`VideoGenRequest` 保持 adapter 请求结构，不承载 Seedance 业务默认值；`canvas_compiler` 从 catalog typed view 填充默认值并做边界校验；前端通过后端 catalog endpoint 渲染 `VideoGenNode` 参数控件。
 
+### ADR-008 · 前端以 WebMCP 暴露画布业务命令层
+
+**决策**：在前端接入一层 **WebMCP 工具层**，把 EP 工坊画布的业务动作（建/改节点、连线、设参数、保存、触发生成）暴露为一组**稳定的浏览器内 MCP 工具**，让本地 AI 客户端在用户正打开的网页上自然语言搭建画布。工具是"画布业务命令层"，**不是**把每个节点实例动态工具化，也**不是** React 组件事件的外泄。
+
+**背景**：需求方希望 AI 客户端能像操作 IDE 一样操控当前工坊页面。项目已具备接入地基——通用 `CanvasGraph`、6 种节点类型、画布读写与编译、文/图/视频生成端点都已就绪，只需在前端加一层薄桥。选用 `webmcp-nexus-sdk` + `vite-plugin-webmcp-nexus` + `@mcp-b/webmcp-local-relay`：工具是顶层导出 TS 函数，schema 由构建插件从类型 + JSDoc 抽取。
+
+**权衡**：WebMCP 仍在演进（Chrome 已提示 `navigator.modelContext` 将迁移到 `document.modelContext`），故定位为**可替换的开发/实验期可视化操控层**，核心业务不绑死其上；无浏览器批量生成的诉求另由后端 MCP server 承载（非本阶段）。工具的 schema 抽取只稳定支持浅嵌套，因此不暴露整张 `CanvasGraph` 巨型入参，而暴露少量浅参数工具，内部组装 DTO。节点坐标由工具层确定性分层布局计算（AI 不传坐标）。因 schema 抽取作用于顶层函数，画布状态必须从组件内 `useState` 提升到模块级 zustand store——这同时落实了 [04 §4](04_frontend.md) 早已规定的"画布本地态用 Zustand"。
+
+**影响**：见 [06 WebMCP 工具层](06_webmcp_tools.md)。前端新增 `src/stores/canvasStore.ts`（画布状态 + 业务动作）、`src/mcp/tools.ts`（工具函数 + 注册），`CanvasWorkshop` 改为消费该 store；`vite.config.ts` 加构建插件、`index.html` 仅开发期注入 relay `embed.js`。
+
 ## 6. 文档导航
 
 | 文档 | 内容 |
@@ -181,6 +191,7 @@ ai-drama-flow/
 | [03 后端接口与任务](03_backend_api.md) | FastAPI 路由 + Typer CLI + 轻量异步 job |
 | [04 前端](04_frontend.md) | React/TS、i18n、自由编排画布、页面流 |
 | [05 路线图](05_roadmap.md) | MVP 里程碑 + 渐进式 `test/01-*` 测试计划 |
+| [06 WebMCP 工具层](06_webmcp_tools.md) | AI 客户端经浏览器内 MCP 工具操控工坊画布 |
 
 ## 7. 设计原则（贯穿全项目）
 

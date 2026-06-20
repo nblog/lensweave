@@ -33,6 +33,12 @@
 - 按 pipeline 正向流程逐个接：01 解读 → 02 策划 → 04/05 资产出图 → 03 剧本 → 07 分镜板。
 - 每接一个阶段，补一组对应的 ordered 测试。
 
+### M3.5 · WebMCP 工具层（AI 操控画布，ADR-008）
+- 画布本地态从组件内 `useState` 提升到模块级 zustand store（`src/stores/canvasStore.ts`），落实 [04 §4](04_frontend.md) 的"画布本地态用 Zustand"。
+- 接入 `webmcp-nexus-sdk` + `vite-plugin-webmcp-nexus`，第一阶段暴露 [06 §3.1](06_webmcp_tools.md) 的 7 个工具，跑通"自然语言搭一个镜头并出片"；第二阶段补细粒度编辑工具。
+- 仅开发期注入本地 relay `embed.js`，不进生产。
+- 验收：本地 MCP 客户端调用 `drama_build_shot_video_graph` + `drama_run_video_node`，画布实时长出节点并产出一段视频。
+
 ## 2. 渐进式测试计划（`backend/tests/`）
 
 | 阶段 | 关注 | 内容 |
