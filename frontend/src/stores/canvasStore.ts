@@ -213,7 +213,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   addNode: (kind, label) => {
     const { nodes, videoSettings, nodeSeq } = get();
-    const id = `${kind}-${nodeSeq + 1}`;
+    const { id, seq } = nextPaletteNodeId(kind, nodes, nodeSeq);
     const data: NodeData = {
       kind,
       label,
@@ -226,7 +226,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         : {}),
     };
     set({
-      nodeSeq: nodeSeq + 1,
+      nodeSeq: seq,
       nodes: [
         ...nodes,
         {
@@ -278,7 +278,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
 
   loadFromDto: (graph) => {
     const { nodes, edges } = dtoToFlow(graph);
-    set({ nodes, edges });
+    set({ nodes, edges, nodeSeq: maxPaletteNodeSeq(nodes) });
   },
 
   toDto: () => {
@@ -630,6 +630,30 @@ function findAssetByName(name: string): { id: number; name: string } | undefined
     assetSnapshot.find((a) => a.name.toLowerCase() === lower) ??
     assetSnapshot.find((a) => a.name.toLowerCase().includes(lower))
   );
+}
+
+function nextPaletteNodeId(
+  kind: NodeKind,
+  nodes: CanvasNode[],
+  currentSeq: number,
+): { id: string; seq: number } {
+  const existingIds = new Set(nodes.map((node) => node.id));
+  let seq = Math.max(currentSeq, maxPaletteNodeSeq(nodes)) + 1;
+  let id = `${kind}-${seq}`;
+  while (existingIds.has(id)) {
+    seq += 1;
+    id = `${kind}-${seq}`;
+  }
+  return { id, seq };
+}
+
+function maxPaletteNodeSeq(nodes: CanvasNode[]): number {
+  return nodes.reduce((maxSeq, node) => {
+    const match = /-(\d+)$/.exec(node.id);
+    if (!match) return maxSeq;
+    const seq = Number(match[1]);
+    return Number.isFinite(seq) ? Math.max(maxSeq, seq) : maxSeq;
+  }, 0);
 }
 
 /** Upsert a node by id into a state object, returning the new state. */
