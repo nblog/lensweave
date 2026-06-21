@@ -123,7 +123,7 @@ src/i18n/
 
 ### 3.3 右侧节点编辑面板
 
-选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前 episode 可见资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖。`ImageGenNode` 的生成图双击打开完整预览，左下角收藏按钮打开"保存为资产"模态窗；该模态窗默认保存到当前项目资产，用户可切换为全局资产，并在项目资产下选择固定 / 临时。模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
+选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前 episode 可见资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖，并以同一套运行状态显示 job 状态、错误与产物预览。`ImageGenNode` 的生成图双击打开完整预览，左下角收藏按钮打开"保存为资产"模态窗；该模态窗默认保存到当前项目资产，用户可切换为全局资产，并在项目资产下选择固定 / 临时。模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ### 3.4 前端即护栏：端口类型校验
 

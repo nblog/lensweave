@@ -26,7 +26,7 @@
 
 ```python
 class TextGenRequest(BaseModel):
-    prompt: str
+    input_texts: list[str] = Field(min_length=1)  # TEXT_GEN 的有序文本输入
     system_prompt: str = "You are a helpful assistant."
     model: str | None = None
     max_tokens: int | None = None
@@ -42,6 +42,8 @@ class TextAdapter(ABC):
     @abstractmethod
     async def generate(self, req: TextGenRequest) -> TextGenResult: ...
 ```
+
+`input_texts` 保留画布连线 order 语义，避免多个文本节点接入 TextGen 时只消费第一条。Routin 文本 adapter 使用 AgentScope 的 `reply_stream(Msg | list[Msg])` 语义，把 `input_texts` 按顺序投影为 `list[UserMsg]`，不在 compiler 里拼接成合成 prompt。
 
 ### 2.2 图像生成（文生图 / 图文生图）
 
@@ -124,7 +126,7 @@ class VideoAdapter(ABC):
     async def poll(self, provider_task_id: str) -> VideoPollResult: ...
 ```
 
-> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。`ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影：它保留 text/image 混合顺序；`prompt/images` 继续作为结构化字段，便于 job 记录、校验和非多模态 adapter fallback。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
+> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。`ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影：它保留 text/image 混合顺序；`prompt/images` 继续作为结构化字段，便于 job 记录、校验和非多模态 adapter fallback。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
 
 ## 3. routin 实现（`src/ai_drama/adapters/routin/`）
 

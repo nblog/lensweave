@@ -95,7 +95,7 @@ def compile_text_request(
     *,
     output_node_id: str,
 ) -> TextGenRequest:
-    """Compile a TEXT_GEN adapter node's first text input into a request."""
+    """Compile a TEXT_GEN adapter node's ordered text inputs into a request."""
     by_id = {n.id: n for n in graph.nodes}
     node = by_id.get(output_node_id)
     if node is None or node.kind is not NodeKind.TEXT_GEN:
@@ -103,18 +103,18 @@ def compile_text_request(
     if not is_adapter_node(node.kind):
         raise CompileError(f"{output_node_id!r} is not an adapter node")
 
-    prompt: str | None = None
+    input_texts: list[str] = []
     for src, port in _ordered_inputs(graph, output_node_id):
         if port is PortType.TEXT:
-            prompt = _text_from_node(src)
-            if prompt:
-                break
+            text = _text_from_node(src)
+            if text:
+                input_texts.append(text)
 
-    if not prompt:
+    if not input_texts:
         raise CompileError("no text input with a prompt feeds the text_gen node")
     data = node.data or {}
     return TextGenRequest(
-        prompt=prompt,
+        input_texts=input_texts,
         system_prompt=data.get("system_prompt") or "You are a helpful assistant.",
         model=data.get("model"),
         max_tokens=data.get("max_tokens"),

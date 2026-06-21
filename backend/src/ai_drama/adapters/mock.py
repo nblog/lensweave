@@ -43,7 +43,8 @@ class MockTextAdapter(TextAdapter):
     """Deterministic text adapter for offline tests and local UI smoke checks."""
 
     async def generate(self, req: TextGenRequest) -> TextGenResult:
-        text = req.prompt.strip() or "empty prompt"
+        texts = [text.strip() for text in req.input_texts]
+        text = "\n\n".join(text for text in texts if text) or "empty prompt"
         return TextGenResult(text=f"[mock text] {text}", model=req.model or "mock")
 
 

@@ -584,6 +584,12 @@ export function CanvasWorkshop({
                   ? t("canvas.generating")
                   : t("canvas.generateText")}
               </button>
+              <AdapterInspectorRunState node={selected.data} nowMs={elapsedNow} />
+              {selected.data.text && (
+                <pre className="text-preview inspector-text-preview">
+                  {selected.data.text}
+                </pre>
+              )}
             </>
           )}
 
@@ -599,14 +605,7 @@ export function CanvasWorkshop({
                   ? t("canvas.generating")
                   : t("canvas.generateImage")}
               </button>
-              {selected.data.jobStatus && (
-                <div className="inspector-run-meta">
-                  <NodeRunMeta node={selected.data} nowMs={elapsedNow} />
-                </div>
-              )}
-              {selected.data.jobError && (
-                <p className="error small">{selected.data.jobError}</p>
-              )}
+              <AdapterInspectorRunState node={selected.data} nowMs={elapsedNow} />
               <ImagePreviewFrame
                 src={selectedImagePreview}
                 alt={selected.data.label || t("canvas.nodeImageGen")}
@@ -693,20 +692,18 @@ export function CanvasWorkshop({
               {!selectedVideoCanRender && (
                 <p className="muted small">{t("canvas.needVideoGen")}</p>
               )}
-              {selected.data.jobStatus && (
-                <div className="inspector-run-meta video-gen-run-meta">
-                  <NodeRunMeta node={selected.data} nowMs={elapsedNow} />
-                </div>
-              )}
-              {selected.data.jobError && (
-                <p className="error small">{selected.data.jobError}</p>
-              )}
+              <AdapterInspectorRunState
+                node={selected.data}
+                nowMs={elapsedNow}
+                className="video-gen-run-meta"
+              />
             </>
           )}
 
           {selected &&
             selected.data.jobStatus &&
             selected.data.kind !== "image_gen" &&
+            selected.data.kind !== "text_gen" &&
             selected.data.kind !== "video_gen" && (
             <div className="job-box">
               <span>
@@ -715,9 +712,6 @@ export function CanvasWorkshop({
               </span>
               {selected.data.jobError && (
                 <p className="error small">{selected.data.jobError}</p>
-              )}
-              {selected.data.kind === "text_gen" && selected.data.text && (
-                <pre className="text-preview">{selected.data.text}</pre>
               )}
               {selected.data.kind === "video" && videoPreviewUrl(selected.data) && (
                 <video
@@ -974,6 +968,35 @@ function NodeRunMeta({
       )}
       {node.generatedAt && <time>{node.generatedAt}</time>}
     </div>
+  );
+}
+
+function AdapterInspectorRunState({
+  node,
+  nowMs,
+  className,
+}: {
+  node: NodeRunState & Pick<NodeData, "jobError">;
+  nowMs: number;
+  className?: string;
+}) {
+  if (!node.jobStatus && !node.jobError) {
+    return null;
+  }
+
+  const metaClassName = ["inspector-run-meta", className]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <>
+      {node.jobStatus && (
+        <div className={metaClassName}>
+          <NodeRunMeta node={node} nowMs={nowMs} />
+        </div>
+      )}
+      {node.jobError && <p className="error small">{node.jobError}</p>}
+    </>
   );
 }
 

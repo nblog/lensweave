@@ -28,7 +28,6 @@ from ai_drama.adapters.base import (
     TextGenResult,
     VideoAdapter,
     VideoGenRequest,
-    VideoImageSlot,
     VideoPollResult,
     VideoSubmitResult,
 )
@@ -196,7 +195,8 @@ class RoutinTextAdapter(TextAdapter):
         )
 
         parts: list[str] = []
-        async for event in agent.reply_stream(UserMsg("user", req.prompt)):
+        messages = [UserMsg("user", text) for text in req.input_texts]
+        async for event in agent.reply_stream(messages):
             if event.type == EventType.TEXT_BLOCK_DELTA:
                 delta = getattr(event, "delta", "")
                 if delta:

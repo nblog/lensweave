@@ -1518,6 +1518,10 @@ button.primary:disabled {
   font: inherit;
 }
 
+.inspector-text-preview {
+  margin-top: 0.65rem;
+}
+
 .block {
   width: 100%;
 }

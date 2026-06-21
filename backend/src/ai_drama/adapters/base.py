@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 class TextGenRequest(BaseModel):
     """Text → text request compiled from a TEXT_GEN canvas node."""
 
-    prompt: str
+    input_texts: list[str] = Field(min_length=1)
     system_prompt: str = "You are a helpful assistant."
     model: str | None = None
     max_tokens: int | None = None

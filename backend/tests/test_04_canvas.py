@@ -11,7 +11,12 @@ from __future__ import annotations
 import pytest
 
 from ai_drama.models import CanvasEdge, CanvasGraph, CanvasNode, NodeKind
-from ai_drama.services.canvas_compiler import CompileError, compile_video_request
+from ai_drama.services.canvas_compiler import (
+    CompileError,
+    compile_image_request,
+    compile_text_request,
+    compile_video_request,
+)
 
 
 def _image_for(ref_id):
@@ -48,6 +53,57 @@ def test_compile_orders_images_by_edge_order():
     assert [s.ref for s in req.images] == ["char.png", "scene.png"]
     assert req.duration == 15
     assert req.resolution == "720p"
+
+
+def test_compile_text_request_preserves_all_ordered_text_inputs():
+    """TextGen preserves every ordered text input instead of silently dropping later ones."""
+    g = CanvasGraph(
+        episode_id=1,
+        nodes=[
+            CanvasNode(
+                id="episode",
+                kind=NodeKind.TEXT,
+                data={"visual_prompt": "episode script"},
+            ),
+            CanvasNode(
+                id="character",
+                kind=NodeKind.TEXT,
+                data={"visual_prompt": "character card"},
+            ),
+            CanvasNode(id="tg", kind=NodeKind.TEXT_GEN),
+        ],
+        edges=[
+            CanvasEdge(id="e1", source="episode", target="tg", order=2),
+            CanvasEdge(id="e2", source="character", target="tg", order=1),
+        ],
+    )
+
+    req = compile_text_request(g, output_node_id="tg")
+
+    assert req.input_texts == ["character card", "episode script"]
+    assert "prompt" not in req.model_dump()
+
+
+def test_compile_image_request_uses_current_text_gen_node_text():
+    """Downstream adapters consume the current saved text on a text_gen node."""
+    g = CanvasGraph(
+        episode_id=1,
+        nodes=[
+            CanvasNode(
+                id="tg",
+                kind=NodeKind.TEXT_GEN,
+                data={"visual_prompt": "edited generated text"},
+            ),
+            CanvasNode(id="ig", kind=NodeKind.IMAGE_GEN),
+        ],
+        edges=[CanvasEdge(id="e1", source="tg", target="ig", order=1)],
+    )
+
+    req = compile_image_request(
+        g, output_node_id="ig", resolve_asset_image=_image_for
+    )
+
+    assert req.prompt == "edited generated text"
 
 
 def test_compile_uses_video_gen_node_settings():
