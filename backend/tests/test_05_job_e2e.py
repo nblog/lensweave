@@ -9,6 +9,7 @@ fixture lives in conftest.
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 
@@ -228,3 +229,40 @@ def test_text_and_image_generation_jobs_over_http(client) -> None:
     image_body = image_job.json()
     assert image_body["status"] == "succeeded"
     assert image_body["result"]["image_url"].startswith("/images/")
+
+
+def test_resume_running_jobs_ignores_non_video_jobs(client) -> None:
+    project = client.post("/api/projects", json={"title": "Resume Guard"}).json()
+    episode = client.post(
+        f"/api/projects/{project['uid']}/episodes",
+        json={"episode_no": 1, "title": "EP01"},
+    ).json()
+
+    from ai_drama.db import GenerationJob, SessionLocal
+    from ai_drama import services
+
+    with SessionLocal() as db:
+        job = GenerationJob(
+            id="running-image-job",
+            kind="image",
+            status="running",
+            target_table="episode",
+            target_id=episode["id"],
+            request={
+                "channel": "mock",
+                "output_node_id": "image_gen-1",
+                "prompt": "still image only",
+                "images": [],
+            },
+        )
+        db.add(job)
+        db.commit()
+
+    assert asyncio.run(services.resume_running_jobs()) == 0
+
+    with SessionLocal() as db:
+        job = db.get(GenerationJob, "running-image-job")
+        assert job is not None
+        assert job.kind == "image"
+        assert job.provider_task_id is None
+        assert job.result is None

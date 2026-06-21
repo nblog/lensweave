@@ -188,6 +188,9 @@ async def run_video_job(job_id: str, *, interval: float = 2.0) -> None:
         job = db.get(GenerationJob, job_id)
         if job is None:
             return
+        if job.kind != "video":
+            logger.warning("skip non-video job %s in video runner", job.id)
+            return
         channel = job.request.get("channel", "mock")
         adapter = get_video_adapter(channel)
         req = VideoGenRequest.model_validate(
@@ -216,7 +219,8 @@ async def resume_running_jobs() -> int:
     """
     with SessionLocal() as db:
         stmt = select(GenerationJob).where(
-            GenerationJob.status == JobStatus.RUNNING.value
+            GenerationJob.status == JobStatus.RUNNING.value,
+            GenerationJob.kind == "video",
         )
         job_ids = [j.id for j in db.scalars(stmt)]
     for jid in job_ids:
