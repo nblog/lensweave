@@ -63,6 +63,7 @@ import {
   currentRunElapsedMs,
   hasVideoPromptInput,
   isActiveJobStatus,
+  NODE_OUTPUT,
   normalizeVideoDuration,
   normalizeVideoResolution,
   patchNodes,
@@ -70,6 +71,7 @@ import {
   type InputSummary,
   type NodeData,
   type NodeRunState,
+  type PortType,
 } from "../canvas/graph";
 import {
   publishAssetSnapshot,
@@ -570,6 +572,7 @@ export function CanvasWorkshop({
                         draggedInputIdRef.current = null;
                       }}
                     />
+                    <InputNodeTypeIcon kind={n.kind} t={t} />
                     <span className="input-node-label">{n.label || n.kind}</span>
                   </li>
                 ))}
@@ -1442,6 +1445,43 @@ function jobStatusLabel(status: Job["status"], t: Translate): string {
       return t("canvas.jobFailed");
     case "canceled":
       return t("canvas.jobCanceled");
+  }
+}
+
+function InputNodeTypeIcon({ kind, t }: { kind: NodeKind; t: Translate }) {
+  const outputType = NODE_OUTPUT[kind];
+  const label = t(`canvas.${inputNodeOutputLabelKey(outputType)}`);
+  return (
+    <span
+      className={`input-node-type-icon input-node-type-icon-${outputType}`}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      {inputNodeOutputIcon(outputType)}
+    </span>
+  );
+}
+
+function inputNodeOutputIcon(outputType: PortType) {
+  switch (outputType) {
+    case "text":
+      return <Type size={14} strokeWidth={2.2} aria-hidden />;
+    case "image":
+      return <ImageIcon size={14} strokeWidth={2.2} aria-hidden />;
+    case "video":
+      return <Clapperboard size={14} strokeWidth={2.2} aria-hidden />;
+  }
+}
+
+function inputNodeOutputLabelKey(outputType: PortType): string {
+  switch (outputType) {
+    case "text":
+      return "nodeText";
+    case "image":
+      return "nodeImage";
+    case "video":
+      return "nodeVideo";
   }
 }
 

@@ -1432,10 +1432,39 @@ button.primary:disabled {
 }
 
 .input-node-label {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.input-node-type-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex: 0 0 1.35rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.input-node-type-icon-text {
+  border-color: rgba(15, 118, 110, 0.2);
+  background: rgba(20, 184, 166, 0.12);
+  color: #0f766e;
+}
+
+.input-node-type-icon-image {
+  border-color: rgba(180, 83, 9, 0.2);
+  background: rgba(245, 158, 11, 0.15);
+  color: #b45309;
+}
+
+.input-node-type-icon-video {
+  border-color: rgba(109, 40, 217, 0.2);
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
 }
 
 .drag-grip {
