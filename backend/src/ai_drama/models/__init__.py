@@ -26,12 +26,19 @@ from ai_drama.models.enums import (
 )
 from ai_drama.models.episode import EpisodeCreate, EpisodeRead
 from ai_drama.models.job import JobRead
-from ai_drama.models.project import ProjectCreate, ProjectRead
+from ai_drama.models.project import ProjectCreate, ProjectRead, ProjectSensitiveAction
 from ai_drama.models.storyboard import (
     DialogueLine,
     Segment,
     SegmentRead,
     StoryboardJSON,
+)
+from ai_drama.models.user import (
+    AuthSession,
+    LoginRequest,
+    UserCreate,
+    UserRead,
+    UserUpdate,
 )
 
 __all__ = [
@@ -43,6 +50,7 @@ __all__ = [
     "AssetScope",
     "AssetRead",
     "AssetUpdate",
+    "AuthSession",
     "CanvasEdge",
     "CanvasGraph",
     "CanvasNode",
@@ -52,12 +60,17 @@ __all__ = [
     "JobKind",
     "JobRead",
     "JobStatus",
+    "LoginRequest",
     "NodeKind",
     "PortType",
     "ProjectCreate",
     "ProjectRead",
+    "ProjectSensitiveAction",
     "Segment",
     "SegmentRead",
     "StoryboardJSON",
+    "UserCreate",
+    "UserRead",
+    "UserUpdate",
     "is_adapter_node",
 ]

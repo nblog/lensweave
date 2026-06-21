@@ -1,4 +1,4 @@
-/** Project asset gallery: global / project fixed / episode temporary assets. */
+/** Project asset gallery: project fixed / episode temporary assets. */
 import { useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,7 +6,6 @@ import {
   Archive,
   Clock3,
   Database,
-  Globe2,
   Image as ImageIcon,
   MapPin,
   Package,
@@ -20,10 +19,11 @@ import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
 import { BASE_URL } from "../api/client";
 
 type AssetFilter = "all" | AssetKind;
+type ProjectAssetScope = Extract<AssetScope, "fixed" | "temporary">;
 
 const ASSET_FILTERS: AssetFilter[] = ["all", "character", "prop", "scene"];
 const ASSET_GROUPS: AssetKind[] = ["character", "prop", "scene"];
-const ASSET_SCOPE_OPTIONS: AssetScope[] = ["global", "fixed", "temporary"];
+const PROJECT_ASSET_SCOPE_OPTIONS: ProjectAssetScope[] = ["fixed", "temporary"];
 
 export function ProjectAssetsPanel({
   projectUid,
@@ -34,7 +34,7 @@ export function ProjectAssetsPanel({
 }) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
-  const [scope, setScope] = useState<AssetScope>("global");
+  const [scope, setScope] = useState<ProjectAssetScope>("fixed");
   const [filter, setFilter] = useState<AssetFilter>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingAsset, setEditingAsset] = useState<Asset | null>(null);
@@ -46,10 +46,6 @@ export function ProjectAssetsPanel({
   });
 
   const allAssets = useMemo(() => assets.data ?? [], [assets.data]);
-  const globalAssets = useMemo(
-    () => allAssets.filter((asset) => readAssetScope(asset) === "global"),
-    [allAssets],
-  );
   const fixedAssets = useMemo(
     () => allAssets.filter((asset) => readAssetScope(asset) === "fixed"),
     [allAssets],
@@ -58,16 +54,11 @@ export function ProjectAssetsPanel({
     () => allAssets.filter((asset) => readAssetScope(asset) === "temporary"),
     [allAssets],
   );
-  const activeScope = scope === "temporary" && !episodeId ? "global" : scope;
-  const scopedAssets =
-    activeScope === "global"
-      ? globalAssets
-      : activeScope === "fixed"
-        ? fixedAssets
-        : temporaryAssets;
+  const activeScope: ProjectAssetScope =
+    scope === "temporary" && !episodeId ? "fixed" : scope;
+  const scopedAssets = activeScope === "fixed" ? fixedAssets : temporaryAssets;
   const counts = useMemo(() => countByKind(scopedAssets), [scopedAssets]);
-  const scopeCounts: Record<AssetScope, number> = {
-    global: globalAssets.length,
+  const scopeCounts: Record<ProjectAssetScope, number> = {
     fixed: fixedAssets.length,
     temporary: temporaryAssets.length,
   };
@@ -82,7 +73,7 @@ export function ProjectAssetsPanel({
     <section className="asset-gallery" aria-label={t("assets.heading")}>
       <div className="asset-gallery-toolbar">
         <div className="asset-mode-tabs" aria-label={t("assets.assetScope")}>
-          {ASSET_SCOPE_OPTIONS.map((option) => (
+          {PROJECT_ASSET_SCOPE_OPTIONS.map((option) => (
             <button
               key={option}
               type="button"
@@ -156,9 +147,7 @@ export function ProjectAssetsPanel({
           episodeId={episodeId}
           onClose={() => setIsCreateOpen(false)}
           onSubmit={async (body) => {
-            if (body.scope === "global") {
-              await api.createGlobalAsset(body);
-            } else if (body.scope === "temporary") {
+            if (body.scope === "temporary") {
               if (!episodeId) throw new Error(t("assets.episodeRequired"));
               await api.createEpisodeAsset(episodeId, body);
             } else {
@@ -180,9 +169,7 @@ export function ProjectAssetsPanel({
           onClose={() => setEditingAsset(null)}
           onSave={async (body) => {
             const assetScope = readAssetScope(editingAsset);
-            if (assetScope === "global") {
-              await api.updateGlobalAsset(editingAsset.id, body);
-            } else if (assetScope === "temporary") {
+            if (assetScope === "temporary") {
               const targetEpisodeId = editingAsset.episode_id ?? episodeId;
               if (!targetEpisodeId) throw new Error(t("assets.episodeRequired"));
               await api.updateEpisodeAsset(targetEpisodeId, editingAsset.id, body);
@@ -193,9 +180,7 @@ export function ProjectAssetsPanel({
           }}
           onDelete={async () => {
             const assetScope = readAssetScope(editingAsset);
-            if (assetScope === "global") {
-              await api.deleteGlobalAsset(editingAsset.id);
-            } else if (assetScope === "temporary") {
+            if (assetScope === "temporary") {
               const targetEpisodeId = editingAsset.episode_id ?? episodeId;
               if (!targetEpisodeId) throw new Error(t("assets.episodeRequired"));
               await api.deleteEpisodeAsset(targetEpisodeId, editingAsset.id);
@@ -285,11 +270,11 @@ function AssetCreateDialog({
   onClose,
   onSubmit,
 }: {
-  defaultScope: AssetScope;
+  defaultScope: ProjectAssetScope;
   episodeId: number | null;
   onClose: () => void;
   onSubmit: (body: {
-    scope: AssetScope;
+    scope: ProjectAssetScope;
     kind: AssetKind;
     name: string;
     description: string | null;
@@ -298,7 +283,7 @@ function AssetCreateDialog({
   }) => Promise<void>;
 }) {
   const { t } = useTranslation();
-  const [scope, setScope] = useState<AssetScope>(defaultScope);
+  const [scope, setScope] = useState<ProjectAssetScope>(defaultScope);
   const [kind, setKind] = useState<AssetKind>("character");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -373,7 +358,7 @@ function AssetCreateDialog({
 
           <label>{t("assets.assetScope")}</label>
           <div className="asset-scope-options" role="group">
-            {ASSET_SCOPE_OPTIONS.map((option) => (
+            {PROJECT_ASSET_SCOPE_OPTIONS.map((option) => (
               <button
                 key={option}
                 type="button"
@@ -456,7 +441,6 @@ async function invalidateAssetQueries(
 ) {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ["assets"] }),
-    queryClient.invalidateQueries({ queryKey: ["global-assets"] }),
     queryClient.invalidateQueries({ queryKey: ["episode-assets"] }),
   ]);
 }
@@ -484,12 +468,12 @@ function filterIcon(kind: AssetFilter) {
 
 function scopeIcon(scope: AssetScope, size = 15) {
   switch (scope) {
-    case "global":
-      return <Globe2 size={size} aria-hidden />;
     case "fixed":
       return <Archive size={size} aria-hidden />;
     case "temporary":
       return <Clock3 size={size} aria-hidden />;
+    case "global":
+      return null;
   }
 }
 

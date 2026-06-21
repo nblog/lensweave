@@ -8,11 +8,13 @@ creates tables and re-attaches poll loops to any jobs left running (docs/03
 
 from __future__ import annotations
 
+import secrets
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 
-from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -25,14 +27,20 @@ from ai_drama.models import (
     AssetCreate,
     AssetRead,
     AssetUpdate,
+    AuthSession,
     CanvasGraph,
     EpisodeCreate,
     EpisodeRead,
     JobRead,
+    LoginRequest,
     ProjectCreate,
     ProjectRead,
+    ProjectSensitiveAction,
     SegmentRead,
     StoryboardJSON,
+    UserCreate,
+    UserRead,
+    UserUpdate,
 )
 from ai_drama.services.jobs import ensure_clips_dir, ensure_images_dir
 
@@ -48,6 +56,14 @@ def get_db() -> Iterator[Session]:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db()
+    settings = get_settings()
+    app.state.auth_sessions.clear()
+    with SessionLocal() as db:
+        services.ensure_default_admin_user(
+            db,
+            username=settings.auth_username,
+            password=settings.auth_password,
+        )
     ensure_clips_dir()
     await services.resume_running_jobs()
     yield
@@ -74,6 +90,14 @@ class ImageJobSubmit(BaseModel):
     channel: str = "mock"
 
 
+class CurrentUser(BaseModel):
+    """Authenticated user attached to the request by auth middleware."""
+
+    id: int
+    username: str
+    is_admin: bool
+
+
 def require_project_by_uid(db: Session, project_uid: str):
     project = services.get_project_by_uid(db, project_uid)
     if project is None:
@@ -81,9 +105,43 @@ def require_project_by_uid(db: Session, project_uid: str):
     return project
 
 
+def require_user(request: Request) -> CurrentUser:
+    user = getattr(request.state, "current_user", None)
+    if user is None:
+        raise HTTPException(401, "not authenticated")
+    return user
+
+
+def require_admin(request: Request) -> CurrentUser:
+    user = require_user(request)
+    if not user.is_admin:
+        raise HTTPException(403, "admin permission required")
+    return user
+
+
+def _bearer_token(request: Request) -> str | None:
+    authorization = request.headers.get("authorization", "")
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return None
+    token = authorization[len(prefix) :].strip()
+    return token or None
+
+
+def _revoke_token(app: FastAPI, token: str) -> None:
+    app.state.auth_sessions.pop(token, None)
+
+
+def _revoke_user_sessions(app: FastAPI, user_id: int) -> None:
+    for token, session_user_id in list(app.state.auth_sessions.items()):
+        if session_user_id == user_id:
+            _revoke_token(app, token)
+
+
 def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(title="AI Drama Flow", version="0.1.0", lifespan=lifespan)
+    app.state.auth_sessions = {}
 
     app.add_middleware(
         CORSMiddleware,
@@ -92,6 +150,35 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    @app.middleware("http")
+    async def require_api_login(request: Request, call_next):
+        if request.method == "OPTIONS":
+            return await call_next(request)
+        path = request.url.path
+        if path.startswith("/api/") and path != "/api/auth/login":
+            token = _bearer_token(request)
+            user_id = app.state.auth_sessions.get(token) if token else None
+            if user_id is None:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "not authenticated"},
+                )
+            with SessionLocal() as db:
+                user = services.get_user(db, user_id)
+                if user is None or not user.is_active:
+                    _revoke_token(app, token)
+                    return JSONResponse(
+                        status_code=401,
+                        content={"detail": "not authenticated"},
+                    )
+                request.state.auth_token = token
+                request.state.current_user = CurrentUser(
+                    id=user.id,
+                    username=user.username,
+                    is_admin=user.is_admin,
+                )
+        return await call_next(request)
+
     # Serve generated media so the frontend can preview node outputs.
     app.mount("/clips", StaticFiles(directory=str(ensure_clips_dir())), name="clips")
     app.mount("/images", StaticFiles(directory=str(ensure_images_dir())), name="images")
@@ -99,6 +186,97 @@ def create_app() -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # --- auth ---
+
+    @app.post("/api/auth/login", response_model=AuthSession)
+    def login(data: LoginRequest, db: Session = Depends(get_db)):
+        user = services.authenticate_user(
+            db,
+            username=data.username,
+            password=data.password,
+        )
+        if user is None:
+            raise HTTPException(401, "invalid username or password")
+        token = secrets.token_urlsafe(32)
+        app.state.auth_sessions[token] = user.id
+        return AuthSession(
+            token=token,
+            username=user.username,
+            is_admin=user.is_admin,
+        )
+
+    @app.get("/api/auth/session", response_model=AuthSession)
+    def get_session(request: Request, current: CurrentUser = Depends(require_user)):
+        return AuthSession(
+            token=request.state.auth_token,
+            username=current.username,
+            is_admin=current.is_admin,
+        )
+
+    # --- admin users ---
+
+    @app.get("/api/admin/users", response_model=list[UserRead])
+    def admin_list_users(
+        _current: CurrentUser = Depends(require_admin),
+        db: Session = Depends(get_db),
+    ):
+        return [UserRead.model_validate(user) for user in services.list_users(db)]
+
+    @app.post("/api/admin/users", response_model=UserRead, status_code=201)
+    def admin_create_user(
+        data: UserCreate,
+        _current: CurrentUser = Depends(require_admin),
+        db: Session = Depends(get_db),
+    ):
+        try:
+            return UserRead.model_validate(services.create_user(db, data))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+
+    @app.patch("/api/admin/users/{user_id}", response_model=UserRead)
+    def admin_update_user(
+        user_id: int,
+        data: UserUpdate,
+        request: Request,
+        current: CurrentUser = Depends(require_admin),
+        db: Session = Depends(get_db),
+    ):
+        try:
+            user = services.update_user(
+                db,
+                user_id,
+                data,
+                actor_user_id=current.id,
+            )
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+
+        if (
+            "password" in data.model_fields_set
+            or ("is_active" in data.model_fields_set and not user.is_active)
+        ):
+            _revoke_user_sessions(request.app, user.id)
+        return UserRead.model_validate(user)
+
+    @app.delete("/api/admin/users/{user_id}", status_code=204)
+    def admin_delete_user(
+        user_id: int,
+        request: Request,
+        current: CurrentUser = Depends(require_admin),
+        db: Session = Depends(get_db),
+    ):
+        try:
+            services.delete_user(db, user_id, actor_user_id=current.id)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
+        _revoke_user_sessions(request.app, user_id)
 
     # --- model catalog ---
 
@@ -122,6 +300,20 @@ def create_app() -> FastAPI:
     @app.get("/api/projects/{project_uid}", response_model=ProjectRead)
     def get_project(project_uid: str, db: Session = Depends(get_db)):
         return ProjectRead.model_validate(require_project_by_uid(db, project_uid))
+
+    @app.delete("/api/projects/{project_uid}", status_code=204)
+    def delete_project(
+        project_uid: str,
+        data: ProjectSensitiveAction,
+        db: Session = Depends(get_db),
+    ):
+        project = require_project_by_uid(db, project_uid)
+        try:
+            services.delete_project(db, project.id, data)
+        except LookupError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except PermissionError as exc:
+            raise HTTPException(403, str(exc)) from exc
 
     # --- assets (global / project fixed / episode temporary) ---
 

@@ -38,17 +38,43 @@ ai-drama job poll         --job <job_id>                          # 恢复轮询
 
 REST 风格，资源对齐领域模型。所有请求/响应体复用 [01 领域模型](01_domain_model.md) 的 pydantic 模型——FastAPI 直接拿 pydantic 当 schema，自动产出 OpenAPI，前端据此生成类型化客户端。
 
+### 3.0 本地登录与敏感操作确认
+
+前期仍按单机本地工具处理，不做复杂 RBAC；但 HTTP API 需要一个最小登录门槛，避免未登录浏览器直接访问业务页。首次启动时由后端环境变量引导一个本地管理员账号，默认本地开发为 `AUTH_USERNAME=admin` / `AUTH_PASSWORD=admin`，随后登录校验走 `user_account` 表里的 password hash。
+
+```
+POST /api/auth/login      登录，返回 bearer token
+GET  /api/auth/session    校验当前 bearer token
+```
+
+登录与 session 响应都返回 `{token, username, is_admin}`。除 `/health` 与 `/api/auth/login` 外，所有 `/api/*` 请求都要求 `Authorization: Bearer <token>`。token 是进程内会话凭证，服务重启后失效，前端收到 401 后清空本地登录态并回到 `/login`。
+
+项目还拥有一个创建时设置的**二级密码**，后端只保存 hash。它用于项目级敏感操作，例如 `DELETE /api/projects/{project_uid}`。旧项目没有 hash 时按本地默认二级密码 `123456` 兜底，便于继续管理历史数据。
+
+管理员可维护本地账户：
+
+```
+GET    /api/admin/users
+POST   /api/admin/users
+PATCH  /api/admin/users/{user_id}
+DELETE /api/admin/users/{user_id}
+```
+
+`POST` 创建账号并写入 password hash；`PATCH` 可改用户名、重置密码、切换 `is_admin` / `is_active`；`DELETE` 删除账号。后端禁止删除 / 停用自己，也禁止让系统失去最后一个 active admin。
+
 ### 3.1 项目与阶段产出
 
 ```
-POST   /api/projects                      创建项目
+POST   /api/projects                      创建项目（title + secondary_password）
 GET    /api/projects                      列表
 GET    /api/projects/{project_uid}        详情（含各阶段产出状态）
+DELETE /api/projects/{project_uid}        删除项目（需 secondary_password；级联删除项目内分集 / 项目资产 / 临时资产，保留全局资产）
 POST   /api/projects/{project_uid}/digest 运行 01 小说解读（输入小说原文）
 POST   /api/projects/{project_uid}/plan   运行 02 剧集策划 → Bible + EpisodeMap
 ```
 
 `Project.id` 是数据库内部自增主键；对前端 URL/API path 暴露的是 `Project.uid`，创建项目与项目列表都会返回该字段。
+删除项目只清理该项目拥有的资源：项目固定资产、单集临时资产、分集、segment、画布 JSON 与关联生成任务；`scope=global` 的全局资产不属于任何项目，不能被项目删除接口移除。
 
 ### 3.2 三层资产（ADR-005）
 
@@ -166,6 +192,6 @@ BackgroundTask 内部的轮询循环直接复用 [videogen.py](../test/videogen.
 
 ## 6. 非目标
 
-- 不做用户系统 / 鉴权（前期单机本地工具）。⚠️ 若日后把 FastAPI 暴露到网络，必须先补鉴权——无鉴权的网络服务是安全风险，届时单列。
+- 不做完整云端多租户 / 细粒度 RBAC；当前只有本地账户、管理员入口和项目二级密码护栏。⚠️ 若日后把 FastAPI 暴露到网络，必须升级为真正的用户、会话、审计与权限模型。
 - 不做 WebSocket 双向通道；状态推送用 SSE（单向，够用）。
 - 不做分布式任务队列；规模触顶再迁 arq，job 表不变。

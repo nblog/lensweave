@@ -9,8 +9,11 @@
 ## 1. 实体关系总览
 
 ```
+UserAccount             本地操作员账号（登录 / 管理员维护）
+
 Project (一部剧)
  ├─ uid                稳定公开标识，用于 URL / API project path，不暴露自增 id
+ ├─ secondary_password_hash  项目二级密码 hash，用于项目级敏感操作确认
  ├─ StoryDigest        1:1   故事摘要（01 产出）
  ├─ CharacterBible     1:1   人物圣经（02 产出）
  ├─ WorldBible         1:1   世界圣经（02 产出）
@@ -330,11 +333,22 @@ ORM 用 SQLAlchemy 2.x 声明式风格（`Mapped` / `mapped_column`）。复杂�
 # db/models.py
 class Base(DeclarativeBase): ...
 
+class UserAccount(Base):
+    __tablename__ = "user_account"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(unique=True, index=True)
+    password_hash: Mapped[str]
+    is_admin: Mapped[bool] = mapped_column(default=False)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
+
 class Project(Base):
     __tablename__ = "project"
     id: Mapped[int] = mapped_column(primary_key=True)
     uid: Mapped[str] = mapped_column(unique=True, index=True)  # URL/API 用公开稳定标识
     title: Mapped[str]
+    secondary_password_hash: Mapped[str | None]                # 项目级敏感操作二级密码 hash
     created_at: Mapped[datetime] = mapped_column(default=func.now())
     # 1:1 阶段产出以 JSON 列内联（前期），或拆独立表（后期）
     story_digest: Mapped[dict | None] = mapped_column(JSON, default=None)

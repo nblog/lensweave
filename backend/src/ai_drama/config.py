@@ -48,6 +48,14 @@ class Settings(BaseSettings):
     routin_video_model: str = "doubao-seedance-2-0-fast-260128"
 
     # --- server ---
+    auth_username: str = Field(
+        default="admin",
+        description="Bootstrap admin username for the current workstation.",
+    )
+    auth_password: str = Field(
+        default="admin",
+        description="Bootstrap admin password for the current workstation.",
+    )
     cors_origins: list[str] = Field(
         default=[
             "http://localhost:5173",

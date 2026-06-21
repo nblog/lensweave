@@ -1,28 +1,71 @@
 /** Root layout and URL routes for the page flow in docs/04 §2. */
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Clapperboard, FolderKanban, Globe2 } from "lucide-react";
+import {
+  ArrowLeft,
+  Clapperboard,
+  FolderKanban,
+  Globe2,
+  LogOut,
+  UserRound,
+  UsersRound,
+} from "lucide-react";
 import {
   Link,
   Navigate,
   NavLink,
   Route,
   Routes,
+  useLocation,
   useMatch,
   useParams,
 } from "react-router-dom";
+import { useAuth } from "./auth/auth-context";
 import { LanguageSwitcher } from "./components/LanguageSwitcher";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { CanvasWorkshop } from "./pages/CanvasWorkshop";
 import { GlobalAssetsPage } from "./pages/GlobalAssetsPage";
+import { LoginPage } from "./pages/LoginPage";
+import { AdminUsersPage } from "./pages/AdminUsersPage";
 import "./App.css";
 
 function App() {
+  return (
+    <Routes>
+      <Route path="/login" element={<LoginRoute />} />
+      <Route path="/*" element={<ProtectedApp />} />
+    </Routes>
+  );
+}
+
+function LoginRoute() {
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
+  const state = location.state as
+    | { from?: { pathname?: string; search?: string } }
+    | null;
+  const from = state?.from;
+  const destination =
+    from?.pathname && from.pathname !== "/login"
+      ? `${from.pathname}${from.search ?? ""}`
+      : "/projects";
+
+  if (isAuthenticated) return <Navigate to={destination} replace />;
+  return <LoginPage />;
+}
+
+function ProtectedApp() {
   const { t } = useTranslation();
+  const { isAuthenticated, isAdmin, logout, username } = useAuth();
+  const location = useLocation();
   const projectMatch = useMatch("/projects/:projectUid");
   const workshopMatch = useMatch(
     "/projects/:projectUid/episodes/:episodeId/workshop",
   );
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
 
   const backTo = workshopMatch
     ? `/projects/${workshopMatch.params.projectUid}`
@@ -62,8 +105,32 @@ function App() {
                 <Globe2 size={16} aria-hidden />
                 <span>{t("nav.globalAssets")}</span>
               </NavLink>
+              {isAdmin && (
+                <NavLink
+                  to="/admin/users"
+                  className={({ isActive }) =>
+                    isActive ? "navlink active" : "navlink"
+                  }
+                >
+                  <UsersRound size={16} aria-hidden />
+                  <span>{t("nav.users")}</span>
+                </NavLink>
+              )}
             </nav>
             <LanguageSwitcher />
+            <div className="session-chip" aria-label={t("auth.session")}>
+              <UserRound size={15} aria-hidden />
+              <span>{username ?? t("auth.user")}</span>
+              <button
+                className="session-logout"
+                type="button"
+                onClick={logout}
+                aria-label={t("auth.logout")}
+                title={t("auth.logout")}
+              >
+                <LogOut size={15} aria-hidden />
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -80,6 +147,7 @@ function App() {
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/assets" element={<GlobalAssetsPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/projects/:projectUid" element={<ProjectRoute />} />
           <Route
             path="/projects/:projectUid/episodes/:episodeId/workshop"

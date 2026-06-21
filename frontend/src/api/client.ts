@@ -7,11 +7,62 @@
 export const BASE_URL =
   import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8770";
 
+const AUTH_TOKEN_KEY = "ai-drama.authToken";
+export const AUTH_UNAUTHORIZED_EVENT = "ai-drama:unauthorized";
+
+let authToken =
+  typeof window === "undefined"
+    ? null
+    : window.localStorage.getItem(AUTH_TOKEN_KEY);
+
+export class AuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
+export function getStoredAuthToken() {
+  return authToken;
+}
+
+export function setStoredAuthToken(token: string | null) {
+  authToken = token;
+  if (typeof window === "undefined") return;
+  if (token) {
+    window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
 export interface Project {
   id: number;
   uid: string;
   title: string;
   created_at: string;
+}
+
+export interface AuthSession {
+  token: string;
+  username: string;
+  is_admin: boolean;
+}
+
+export interface UserAccount {
+  id: number;
+  username: string;
+  is_admin: boolean;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserUpdate {
+  username?: string;
+  password?: string;
+  is_admin?: boolean;
+  is_active?: boolean;
 }
 
 export type AssetKind = "character" | "prop" | "scene";
@@ -142,10 +193,21 @@ export const DEFAULT_GENERATION_CHANNEL: GenerationChannel =
   import.meta.env.VITE_GENERATION_CHANNEL === "routin" ? "routin" : "mock";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
   const resp = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers,
   });
+  if (resp.status === 401) {
+    setStoredAuthToken(null);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+    }
+    throw new AuthError("not authenticated");
+  }
   if (!resp.ok) {
     const detail = await resp.text().catch(() => "");
     throw new Error(`HTTP ${resp.status}${detail ? `: ${detail}` : ""}`);
@@ -154,10 +216,21 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 async function requestVoid(path: string, init?: RequestInit): Promise<void> {
+  const headers = new Headers(init?.headers);
+  headers.set("Content-Type", "application/json");
+  if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+
   const resp = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
     ...init,
+    headers,
   });
+  if (resp.status === 401) {
+    setStoredAuthToken(null);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTH_UNAUTHORIZED_EVENT));
+    }
+    throw new AuthError("not authenticated");
+  }
   if (!resp.ok) {
     const detail = await resp.text().catch(() => "");
     throw new Error(`HTTP ${resp.status}${detail ? `: ${detail}` : ""}`);
@@ -165,6 +238,34 @@ async function requestVoid(path: string, init?: RequestInit): Promise<void> {
 }
 
 export const api = {
+  // auth
+  login: (body: { username: string; password: string }) =>
+    request<AuthSession>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  getSession: () => request<AuthSession>("/api/auth/session"),
+
+  // admin users
+  listUsers: () => request<UserAccount[]>("/api/admin/users"),
+  createUser: (body: {
+    username: string;
+    password: string;
+    is_admin: boolean;
+    is_active?: boolean;
+  }) =>
+    request<UserAccount>("/api/admin/users", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateUser: (userId: number, body: UserUpdate) =>
+    request<UserAccount>(`/api/admin/users/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+  deleteUser: (userId: number) =>
+    requestVoid(`/api/admin/users/${userId}`, { method: "DELETE" }),
+
   // model catalog
   getSeedanceVideoSettings: () =>
     request<VideoGenSettings>("/api/model-catalog/seedance/video-settings"),
@@ -173,10 +274,15 @@ export const api = {
   listProjects: () => request<Project[]>("/api/projects"),
   getProject: (projectUid: string) =>
     request<Project>(`/api/projects/${projectUid}`),
-  createProject: (title: string) =>
+  createProject: (body: { title: string; secondary_password: string }) =>
     request<Project>("/api/projects", {
       method: "POST",
-      body: JSON.stringify({ title }),
+      body: JSON.stringify(body),
+    }),
+  deleteProject: (projectUid: string, secondaryPassword: string) =>
+    requestVoid(`/api/projects/${projectUid}`, {
+      method: "DELETE",
+      body: JSON.stringify({ secondary_password: secondaryPassword }),
     }),
 
   // layered assets

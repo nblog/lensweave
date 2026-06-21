@@ -13,6 +13,7 @@ from datetime import datetime
 from uuid import uuid4
 
 from sqlalchemy import (
+    Boolean,
     JSON,
     DateTime,
     ForeignKey,
@@ -38,6 +39,22 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
 
+class UserAccount(Base):
+    """Local operator account for the workbench and admin console."""
+
+    __tablename__ = "user_account"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(80), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(200))
+    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 def generate_project_uid() -> str:
     """Generate a stable public project identifier for URLs/API paths."""
     return uuid4().hex
@@ -53,6 +70,9 @@ class Project(Base):
         String(32), unique=True, index=True, default=generate_project_uid
     )
     title: Mapped[str] = mapped_column(String(200))
+    secondary_password_hash: Mapped[str | None] = mapped_column(
+        String(200), default=None, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     story_digest: Mapped[dict | None] = mapped_column(JSON, default=None)
@@ -204,6 +224,7 @@ def init_db() -> None:
     """
     Base.metadata.create_all(engine)
     _ensure_project_uid_column()
+    _ensure_project_secondary_password_column()
     _ensure_asset_project_column()
     _ensure_asset_scope_columns()
 
@@ -230,6 +251,25 @@ def _ensure_project_uid_column() -> None:
 
         conn.execute(
             text("CREATE UNIQUE INDEX IF NOT EXISTS ix_project_uid ON project (uid)")
+        )
+
+
+def _ensure_project_secondary_password_column() -> None:
+    """Add the per-project secondary-password hash column for old databases."""
+    inspector = inspect(engine)
+    if not inspector.has_table("project"):
+        return
+
+    column_names = {col["name"] for col in inspector.get_columns("project")}
+    if "secondary_password_hash" in column_names:
+        return
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "ALTER TABLE project "
+                "ADD COLUMN secondary_password_hash VARCHAR(200)"
+            )
         )
 
 

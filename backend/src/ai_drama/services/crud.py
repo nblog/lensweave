@@ -8,10 +8,14 @@ or canvas must belong to an existing project / episode).
 
 from __future__ import annotations
 
-from sqlalchemy import select
+import hashlib
+import hmac
+import secrets
+
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from ai_drama.db import Asset, Episode, Project, Segment
+from ai_drama.db import Asset, Episode, GenerationJob, Project, Segment
 from ai_drama.models import (
     AssetCreate,
     AssetScope,
@@ -19,15 +23,25 @@ from ai_drama.models import (
     CanvasGraph,
     EpisodeCreate,
     ProjectCreate,
+    ProjectSensitiveAction,
     StoryboardJSON,
 )
+from ai_drama.models.project import DEFAULT_PROJECT_SECONDARY_PASSWORD
 
 
 # --- project ---
 
+PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
+PASSWORD_HASH_ITERATIONS = 390_000
+
 
 def create_project(db: Session, data: ProjectCreate) -> Project:
-    project = Project(title=data.title)
+    project = Project(
+        title=data.title,
+        secondary_password_hash=_hash_project_secondary_password(
+            data.secondary_password
+        ),
+    )
     db.add(project)
     db.commit()
     db.refresh(project)
@@ -44,6 +58,89 @@ def get_project(db: Session, project_id: int) -> Project | None:
 
 def get_project_by_uid(db: Session, project_uid: str) -> Project | None:
     return db.scalar(select(Project).where(Project.uid == project_uid))
+
+
+def delete_project(
+    db: Session, project_id: int, data: ProjectSensitiveAction
+) -> None:
+    """Delete one project and its owned rows while leaving global assets intact."""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise LookupError(f"project {project_id} not found")
+    if not _verify_project_secondary_password(
+        project.secondary_password_hash, data.secondary_password
+    ):
+        raise PermissionError("secondary password mismatch")
+
+    episode_ids = list(
+        db.scalars(select(Episode.id).where(Episode.project_id == project.id))
+    )
+    segment_ids = (
+        list(db.scalars(select(Segment.id).where(Segment.episode_id.in_(episode_ids))))
+        if episode_ids
+        else []
+    )
+
+    db.execute(
+        delete(GenerationJob).where(
+            GenerationJob.target_table == "project",
+            GenerationJob.target_id == project.id,
+        )
+    )
+    if episode_ids:
+        db.execute(
+            delete(GenerationJob).where(
+                GenerationJob.target_table == "episode",
+                GenerationJob.target_id.in_(episode_ids),
+            )
+        )
+    if segment_ids:
+        db.execute(
+            delete(GenerationJob).where(
+                GenerationJob.target_table == "segment",
+                GenerationJob.target_id.in_(segment_ids),
+            )
+        )
+
+    db.delete(project)
+    db.commit()
+
+
+def _hash_project_secondary_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        PASSWORD_HASH_ITERATIONS,
+    ).hex()
+    return (
+        f"{PASSWORD_HASH_ALGORITHM}${PASSWORD_HASH_ITERATIONS}${salt}${digest}"
+    )
+
+
+def _verify_project_secondary_password(
+    stored_hash: str | None, password: str
+) -> bool:
+    if stored_hash is None:
+        return hmac.compare_digest(password, DEFAULT_PROJECT_SECONDARY_PASSWORD)
+
+    try:
+        algorithm, iterations_raw, salt, digest = stored_hash.split("$", 3)
+        iterations = int(iterations_raw)
+    except ValueError:
+        return False
+
+    if algorithm != PASSWORD_HASH_ALGORITHM:
+        return False
+
+    candidate = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        bytes.fromhex(salt),
+        iterations,
+    ).hex()
+    return hmac.compare_digest(candidate, digest)
 
 
 # --- asset (global / project fixed / episode temporary) ---

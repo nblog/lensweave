@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import "./i18n";
 import "./index.css";
 import App from "./App.tsx";
+import { AuthProvider } from "./auth/AuthProvider";
 import { ConfirmProvider } from "./components/ConfirmDialog";
 
 const queryClient = new QueryClient();
@@ -18,9 +19,11 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
-        <ConfirmProvider>
-          <App />
-        </ConfirmProvider>
+        <AuthProvider>
+          <ConfirmProvider>
+            <App />
+          </ConfirmProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </BrowserRouter>
   </StrictMode>,
