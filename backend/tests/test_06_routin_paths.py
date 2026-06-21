@@ -16,9 +16,12 @@ import pytest
 
 from ai_drama.adapters import routin
 from ai_drama.adapters.base import (
+    ImageContentItem,
+    ImageGenRequest,
+    ImageRef,
+    MultimodalContentType,
     TextGenRequest,
     VideoContentItem,
-    VideoContentType,
     VideoGenRequest,
     VideoImageSlot,
 )
@@ -57,15 +60,13 @@ def test_video_content_uses_compiled_canvas_input_order(tmp_path, monkeypatch):
     image_path.write_bytes(_TINY_PNG)
 
     req = VideoGenRequest(
-        prompt="根据 @图1 生成一段口播视频",
-        images=[VideoImageSlot(ref="/images/generated.png")],
         ordered_content=[
             VideoContentItem(
-                type=VideoContentType.IMAGE,
+                type=MultimodalContentType.IMAGE,
                 image=VideoImageSlot(ref="/images/generated.png"),
             ),
             VideoContentItem(
-                type=VideoContentType.TEXT,
+                type=MultimodalContentType.TEXT,
                 text="根据 @图1 生成一段口播视频",
             ),
         ],
@@ -76,6 +77,38 @@ def test_video_content_uses_compiled_canvas_input_order(tmp_path, monkeypatch):
     assert [item["type"] for item in content] == ["image_url", "text"]
     assert content[0]["role"] == "reference_image"
     assert content[1]["text"] == "根据 @图1 生成一段口播视频"
+
+
+def test_image_content_uses_compiled_canvas_input_order():
+    req = ImageGenRequest(
+        ordered_content=[
+            ImageContentItem(
+                type=MultimodalContentType.IMAGE,
+                image=ImageRef(ref="char.png"),
+            ),
+            ImageContentItem(
+                type=MultimodalContentType.IMAGE,
+                image=ImageRef(ref="scene.png"),
+            ),
+            ImageContentItem(
+                type=MultimodalContentType.TEXT,
+                text="a quiet courtyard",
+            ),
+            ImageContentItem(
+                type=MultimodalContentType.TEXT,
+                text="cinematic dusk lighting",
+            ),
+        ],
+    )
+
+    blocks = list(routin._iter_image_content_blocks(req))
+
+    assert blocks == [
+        (MultimodalContentType.IMAGE, "char.png"),
+        (MultimodalContentType.IMAGE, "scene.png"),
+        (MultimodalContentType.TEXT, "a quiet courtyard"),
+        (MultimodalContentType.TEXT, "cinematic dusk lighting"),
+    ]
 
 
 @pytest.mark.asyncio

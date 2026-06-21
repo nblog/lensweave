@@ -52,9 +52,13 @@ class ImageRef(BaseModel):
     """参考图：本地路径 / http(s) URL / data: URI（对齐 imagegen2.py 的输入语义）。"""
     ref: str
 
+class ImageContentItem(BaseModel):
+    type: Literal["text", "image"]
+    text: str | None = None
+    image: ImageRef | None = None
+
 class ImageGenRequest(BaseModel):
-    prompt: str
-    images: list[ImageRef] = []          # 空=文生图；非空=图文生图（编辑/引导）
+    ordered_content: list[ImageContentItem]  # 画布输入节点的真实混合顺序
     model: str | None = None
     size: str | None = None              # 1024x1024 / 1024x1536 / 1536x1024 / auto
     quality: str | None = None           # low / medium / high / auto
@@ -91,9 +95,7 @@ class VideoContentItem(BaseModel):
     image: VideoImageSlot | None = None
 
 class VideoGenRequest(BaseModel):
-    prompt: str
-    images: list[VideoImageSlot] = []    # 参考图按 08 固定顺序排列
-    ordered_content: list[VideoContentItem] = []  # 画布输入节点的真实混合顺序
+    ordered_content: list[VideoContentItem]  # 画布输入节点的真实混合顺序
     model: str | None = None
     resolution: str | None = None
     ratio: str | None = None             # 16:9 / 9:16 / 1:1
@@ -105,7 +107,7 @@ class VideoGenRequest(BaseModel):
     @model_validator(mode="after")
     def _slots_exclusive(self) -> "VideoGenRequest":
         # 对齐 videogen.py 的服务端规则：首/尾帧槽与参考图槽互斥
-        kinds = {s.kind for s in self.images}
+        kinds = {item.image.kind for item in self.ordered_content if item.image}
         keyframe = {VideoSlotKind.FIRST_FRAME, VideoSlotKind.LAST_FRAME}
         if keyframe & kinds and VideoSlotKind.REFERENCE in kinds:
             raise ValueError("首/尾帧槽不能与参考图槽混用（Ark 服务端规则）")
@@ -126,7 +128,7 @@ class VideoAdapter(ABC):
     async def poll(self, provider_task_id: str) -> VideoPollResult: ...
 ```
 
-> `VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。`ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影：它保留 text/image 混合顺序；`prompt/images` 继续作为结构化字段，便于 job 记录、校验和非多模态 adapter fallback。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
+> `ImageGenRequest.ordered_content` / `VideoGenRequest.ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影，也是图像/视频请求里唯一的多模态上下文来源：它保留 text/image 混合顺序，分别投影为 agent-framework 的 `Message.contents` 与 Ark 的 content array。`VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
 
 ## 3. routin 实现（`src/ai_drama/adapters/routin/`）
 
@@ -179,7 +181,7 @@ def get_video_adapter(channel: str = "routin") -> VideoAdapter: ...
 
 ## 5. 与上层的衔接
 
-- **CanvasGraph 编译产物**就是 `VideoGenRequest`（见 [01 §2.4](01_domain_model.md)）。画布的有序连线编译成 `ordered_content` 的真实上下文顺序，并同步投影出 `images` 列表的固定参考图顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`）。
+- **CanvasGraph 编译产物**就是 `TextGenRequest` / `ImageGenRequest` / `VideoGenRequest`（见 [01 §2.4](01_domain_model.md)）。画布的有序连线在 TextGen 中编译为 `input_texts`，在 ImageGen / VideoGen 中编译为 `ordered_content` 的真实上下文顺序。
 - **pipeline 阶段**调对应 adapter：06 分镜用 `TextAdapter` 产 StoryboardJSON；04/05 资产用 `ImageAdapter`；08 用 `VideoAdapter`。
 - **异步落点**：`VideoAdapter.submit` 返回的 `provider_task_id` 存入 `GenerationJob`，由后端任务层轮询（见 [03 后端接口与任务](03_backend_api.md)）。
 

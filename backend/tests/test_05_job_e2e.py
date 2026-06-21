@@ -251,8 +251,9 @@ def test_resume_running_jobs_ignores_non_video_jobs(client) -> None:
             request={
                 "channel": "mock",
                 "output_node_id": "image_gen-1",
-                "prompt": "still image only",
-                "images": [],
+                "ordered_content": [
+                    {"type": "text", "text": "still image only", "image": None}
+                ],
             },
         )
         db.add(job)

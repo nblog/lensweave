@@ -42,11 +42,39 @@ class ImageRef(BaseModel):
     ref: str
 
 
+class MultimodalContentType(StrEnum):
+    """Ordered multimodal content item kinds for image/video generation."""
+
+    TEXT = "text"
+    IMAGE = "image"
+
+
+class ImageContentItem(BaseModel):
+    """One ordered input block compiled from an IMAGE_GEN node's in-edges."""
+
+    type: MultimodalContentType
+    text: str | None = None
+    image: ImageRef | None = None
+
+    @model_validator(mode="after")
+    def _payload_matches_type(self) -> "ImageContentItem":
+        if self.type == MultimodalContentType.TEXT:
+            if not self.text:
+                raise ValueError("text content item requires text")
+            if self.image is not None:
+                raise ValueError("text content item cannot carry an image")
+        if self.type == MultimodalContentType.IMAGE:
+            if self.image is None:
+                raise ValueError("image content item requires image")
+            if self.text is not None:
+                raise ValueError("image content item cannot carry text")
+        return self
+
+
 class ImageGenRequest(BaseModel):
     """Text + optional image refs → image request for IMAGE_GEN nodes."""
 
-    prompt: str
-    images: list[ImageRef] = Field(default_factory=list)
+    ordered_content: list[ImageContentItem] = Field(min_length=1)
     model: str | None = None
     size: str | None = None
     quality: str | None = None
@@ -54,6 +82,14 @@ class ImageGenRequest(BaseModel):
     background: str | None = None
     moderation: str | None = None
     output_compression: int | None = None
+
+    @model_validator(mode="after")
+    def _requires_text(self) -> "ImageGenRequest":
+        if not any(
+            item.type == MultimodalContentType.TEXT for item in self.ordered_content
+        ):
+            raise ValueError("image_gen request requires at least one text content item")
+        return self
 
 
 class ImageGenResult(BaseModel):
@@ -94,28 +130,21 @@ class VideoImageSlot(BaseModel):
     kind: VideoSlotKind = VideoSlotKind.REFERENCE
 
 
-class VideoContentType(StrEnum):
-    """Ordered multimodal content item kinds for video generation."""
-
-    TEXT = "text"
-    IMAGE = "image"
-
-
 class VideoContentItem(BaseModel):
     """One ordered input block compiled from a VIDEO_GEN node's in-edges."""
 
-    type: VideoContentType
+    type: MultimodalContentType
     text: str | None = None
     image: VideoImageSlot | None = None
 
     @model_validator(mode="after")
     def _payload_matches_type(self) -> "VideoContentItem":
-        if self.type == VideoContentType.TEXT:
+        if self.type == MultimodalContentType.TEXT:
             if not self.text:
                 raise ValueError("text content item requires text")
             if self.image is not None:
                 raise ValueError("text content item cannot carry an image")
-        if self.type == VideoContentType.IMAGE:
+        if self.type == MultimodalContentType.IMAGE:
             if self.image is None:
                 raise ValueError("image content item requires image")
             if self.text is not None:
@@ -126,9 +155,7 @@ class VideoContentItem(BaseModel):
 class VideoGenRequest(BaseModel):
     """Image+text → video request. Mirrors the verified PoC parameter subset."""
 
-    prompt: str
-    images: list[VideoImageSlot] = Field(default_factory=list)
-    ordered_content: list[VideoContentItem] = Field(default_factory=list)
+    ordered_content: list[VideoContentItem] = Field(min_length=1)
     model: str | None = None
     resolution: str | None = None
     ratio: str | None = None  # 16:9 / 9:16 / 1:1
@@ -142,10 +169,15 @@ class VideoGenRequest(BaseModel):
     def _slots_exclusive(self) -> "VideoGenRequest":
         # Ark server rule: keyframe slots cannot mix with reference slots
         # (test/videogen.py). Surface the error at request-construction time.
-        kinds = {s.kind for s in self.images}
+        has_text = False
+        kinds: set[VideoSlotKind] = set()
         for item in self.ordered_content:
+            if item.type == MultimodalContentType.TEXT:
+                has_text = True
             if item.image is not None:
                 kinds.add(item.image.kind)
+        if not has_text:
+            raise ValueError("video_gen request requires at least one text content item")
         keyframe = {VideoSlotKind.FIRST_FRAME, VideoSlotKind.LAST_FRAME}
         if keyframe & kinds and VideoSlotKind.REFERENCE in kinds:
             raise ValueError(

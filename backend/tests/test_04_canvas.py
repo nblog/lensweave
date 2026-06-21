@@ -48,9 +48,10 @@ def test_compile_orders_images_by_edge_order():
     req = compile_video_request(
         _graph(), output_node_id="vg", resolve_asset_image=_image_for
     )
-    assert req.prompt == "a quiet courtyard"
     # Edge order 1 (char) before order 3 (scene); text input carries no image.
-    assert [s.ref for s in req.images] == ["char.png", "scene.png"]
+    assert [
+        item.image.ref for item in req.ordered_content if item.image is not None
+    ] == ["char.png", "scene.png"]
     assert req.duration == 15
     assert req.resolution == "720p"
 
@@ -103,7 +104,53 @@ def test_compile_image_request_uses_current_text_gen_node_text():
         g, output_node_id="ig", resolve_asset_image=_image_for
     )
 
-    assert req.prompt == "edited generated text"
+    assert "prompt" not in req.model_dump()
+    assert "images" not in req.model_dump()
+    assert [item.type for item in req.ordered_content] == ["text"]
+    assert req.ordered_content[0].text == "edited generated text"
+
+
+def test_compile_image_request_preserves_mixed_multimodal_input_order():
+    """ImageGen keeps image/image/text/text order for agent-framework messages."""
+    g = CanvasGraph(
+        episode_id=1,
+        nodes=[
+            CanvasNode(id="c", kind=NodeKind.IMAGE, ref_id=10),
+            CanvasNode(id="s", kind=NodeKind.IMAGE, ref_id=20),
+            CanvasNode(
+                id="scene",
+                kind=NodeKind.TEXT,
+                data={"visual_prompt": "a quiet courtyard"},
+            ),
+            CanvasNode(
+                id="style",
+                kind=NodeKind.TEXT,
+                data={"visual_prompt": "cinematic dusk lighting"},
+            ),
+            CanvasNode(id="ig", kind=NodeKind.IMAGE_GEN),
+        ],
+        edges=[
+            CanvasEdge(id="e1", source="c", target="ig", order=1),
+            CanvasEdge(id="e2", source="s", target="ig", order=2),
+            CanvasEdge(id="e3", source="scene", target="ig", order=3),
+            CanvasEdge(id="e4", source="style", target="ig", order=4),
+        ],
+    )
+
+    req = compile_image_request(
+        g, output_node_id="ig", resolve_asset_image=_image_for
+    )
+
+    assert [item.type for item in req.ordered_content] == [
+        "image",
+        "image",
+        "text",
+        "text",
+    ]
+    assert req.ordered_content[0].image.ref == "char.png"
+    assert req.ordered_content[1].image.ref == "scene.png"
+    assert req.ordered_content[2].text == "a quiet courtyard"
+    assert req.ordered_content[3].text == "cinematic dusk lighting"
 
 
 def test_compile_uses_video_gen_node_settings():
@@ -129,6 +176,8 @@ def test_compile_preserves_mixed_input_order_for_provider_context():
         _graph(), output_node_id="vg", resolve_asset_image=_image_for
     )
 
+    assert "prompt" not in req.model_dump()
+    assert "images" not in req.model_dump()
     assert [item.type for item in req.ordered_content] == ["image", "text", "image"]
     assert req.ordered_content[0].image.ref == "char.png"
     assert req.ordered_content[1].text == "a quiet courtyard"

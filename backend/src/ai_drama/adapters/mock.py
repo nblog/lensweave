@@ -9,6 +9,7 @@ without burning tokens).
 from __future__ import annotations
 
 import base64
+import hashlib
 from pathlib import Path
 
 from ai_drama.adapters.base import (
@@ -54,10 +55,11 @@ class MockImageAdapter(ImageAdapter):
     async def generate(self, req: ImageGenRequest, *, out: Path) -> ImageGenResult:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(base64.b64decode(_TINY_PNG_B64))
+        digest = hashlib.sha1(req.model_dump_json().encode("utf-8")).hexdigest()[:12]
         return ImageGenResult(
             image_path=str(out),
             size_bytes=out.stat().st_size,
-            response_id=f"mock-image-{abs(hash(req.prompt))}",
+            response_id=f"mock-image-{digest}",
         )
 
 

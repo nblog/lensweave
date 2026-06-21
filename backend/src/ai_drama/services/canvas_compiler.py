@@ -2,11 +2,10 @@
 
 Turns the free-form compute graph the user edits into the structured input an
 adapter consumes. For a chosen adapter node it walks the incoming edges, orders
-them by ``CanvasEdge.order``, and splits inputs by port type: TEXT inputs supply
-the prompt, IMAGE inputs supply ordered reference images (from an ImageNode's
-referenced Asset.image_path, or an upstream image product). The ordered images
-follow the 08 fixed reference order; character/scene/prop semantics ride on the
-referenced project Asset.kind, not on node type.
+them by ``CanvasEdge.order``, and compiles TEXT/IMAGE inputs into ordered
+request content. IMAGE inputs reference an ImageNode's Asset.image_path or an
+upstream image product; character/scene/prop semantics ride on the referenced
+project Asset.kind, not on node type.
 
 This is the concrete realization of ADR-001/006's "constraint guardrail": the
 frontend lets the user draw freely, and this compiler is where the graph is
@@ -18,10 +17,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ai_drama.adapters.base import (
+    ImageContentItem,
     ImageGenRequest,
     ImageRef,
+    MultimodalContentType,
     VideoContentItem,
-    VideoContentType,
     TextGenRequest,
     VideoGenRequest,
     VideoImageSlot,
@@ -137,23 +137,30 @@ def compile_image_request(
     if not is_adapter_node(node.kind):
         raise CompileError(f"{output_node_id!r} is not an adapter node")
 
-    prompt: str | None = None
-    images: list[ImageRef] = []
+    ordered_content: list[ImageContentItem] = []
+    has_text = False
     for src, port in _ordered_inputs(graph, output_node_id):
-        if port is PortType.TEXT and prompt is None:
-            prompt = _text_from_node(src)
+        if port is PortType.TEXT:
+            text = _text_from_node(src)
+            if text:
+                has_text = True
+                ordered_content.append(
+                    ImageContentItem(type=MultimodalContentType.TEXT, text=text)
+                )
         elif port is PortType.IMAGE:
             image_ref = _image_ref_from_node(src, resolve_asset_image)
             if image_ref:
-                images.append(ImageRef(ref=image_ref))
+                image = ImageRef(ref=image_ref)
+                ordered_content.append(
+                    ImageContentItem(type=MultimodalContentType.IMAGE, image=image)
+                )
 
-    if not prompt:
+    if not has_text:
         raise CompileError("no text input with a prompt feeds the image_gen node")
 
     data = node.data or {}
     return ImageGenRequest(
-        prompt=prompt,
-        images=images,
+        ordered_content=ordered_content,
         model=data.get("model"),
         size=data.get("size"),
         quality=data.get("quality"),
@@ -188,35 +195,32 @@ def compile_video_request(
     if not inputs:
         raise CompileError("video_gen node has no inputs")
 
-    prompt: str | None = None
-    images: list[VideoImageSlot] = []
     ordered_content: list[VideoContentItem] = []
+    has_text = False
     for src, port in inputs:
         if port is PortType.TEXT:
             text = _text_from_node(src)
             if text:
-                if prompt is None:
-                    prompt = text
+                has_text = True
                 ordered_content.append(
-                    VideoContentItem(type=VideoContentType.TEXT, text=text)
+                    VideoContentItem(type=MultimodalContentType.TEXT, text=text)
                 )
         elif port is PortType.IMAGE:
             image_ref = _image_ref_from_node(src, resolve_asset_image)
             if image_ref:
                 image_slot = VideoImageSlot(ref=image_ref)
-                images.append(image_slot)
                 ordered_content.append(
-                    VideoContentItem(type=VideoContentType.IMAGE, image=image_slot)
+                    VideoContentItem(
+                        type=MultimodalContentType.IMAGE, image=image_slot
+                    )
                 )
 
-    if not prompt:
+    if not has_text:
         raise CompileError("no text input with a prompt feeds the video_gen node")
 
     data = node.data or {}
     settings = video_settings or get_seedance_video_settings()
     return VideoGenRequest(
-        prompt=prompt,
-        images=images,
         ordered_content=ordered_content,
         duration=_video_duration_from_node(data, settings),
         resolution=_video_resolution_from_node(data, settings),

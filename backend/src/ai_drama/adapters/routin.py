@@ -22,8 +22,8 @@ from ai_drama.adapters.base import (
     ImageAdapter,
     ImageGenRequest,
     ImageGenResult,
+    MultimodalContentType,
     TextAdapter,
-    VideoContentType,
     TextGenRequest,
     TextGenResult,
     VideoAdapter,
@@ -73,30 +73,29 @@ def _build_content(req: VideoGenRequest) -> list[dict]:
     Each image carries a ``role`` (Ark rejects image content without it, even
     though the public doc marks it optional — see test/videogen.py)."""
     content: list[dict] = []
-    if req.ordered_content:
-        for item in req.ordered_content:
-            if item.type == VideoContentType.TEXT:
-                content.append({"type": "text", "text": item.text})
-            elif item.image is not None:
-                content.append(
-                    {
-                        "type": "image_url",
-                        "role": item.image.kind.value,
-                        "image_url": {"url": _image_ref_to_url(item.image.ref)},
-                    }
-                )
-        return content
-
-    content.append({"type": "text", "text": req.prompt})
-    for slot in req.images:
-        content.append(
-            {
-                "type": "image_url",
-                "role": slot.kind.value,
-                "image_url": {"url": _image_ref_to_url(slot.ref)},
-            }
-        )
+    for item in req.ordered_content:
+        if item.type == MultimodalContentType.TEXT:
+            content.append({"type": "text", "text": item.text})
+        elif item.image is not None:
+            content.append(
+                {
+                    "type": "image_url",
+                    "role": item.image.kind.value,
+                    "image_url": {"url": _image_ref_to_url(item.image.ref)},
+                }
+            )
     return content
+
+
+def _iter_image_content_blocks(
+    req: ImageGenRequest,
+) -> Iterator[tuple[MultimodalContentType, str]]:
+    """Yield IMAGE_GEN input blocks in provider submission order."""
+    for item in req.ordered_content:
+        if item.type == MultimodalContentType.TEXT and item.text is not None:
+            yield MultimodalContentType.TEXT, item.text
+        elif item.image is not None:
+            yield MultimodalContentType.IMAGE, item.image.ref
 
 
 def _guess_image_media_type(ref: str) -> str:
@@ -261,9 +260,12 @@ class RoutinImageAdapter(ImageAdapter):
             default_options={"tool_choice": "required"},
         )
 
-        contents = [Content.from_text(text=req.prompt)]
-        for image in req.images:
-            contents.append(image_ref_to_content(image.ref))
+        contents = []
+        for kind, value in _iter_image_content_blocks(req):
+            if kind == MultimodalContentType.TEXT:
+                contents.append(Content.from_text(text=value))
+            else:
+                contents.append(image_ref_to_content(value))
         message = Message(role="user", contents=contents)
 
         collected: list[object] = []
