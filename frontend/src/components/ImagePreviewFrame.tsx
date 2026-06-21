@@ -2,9 +2,9 @@
  * Shared image frame used by both the canvas ImageNode (docs/04 §3.3) and the
  * project asset panel (§2.4): a fixed-ratio thumbnail with corner controls —
  * an optional kind TAG (top-left), upload (top-right), a configurable
- * bottom-left action, and an optional retry (bottom-right). Replacing an existing
- * image asks for confirmation here, so the overwrite guardrail is consistent
- * everywhere the frame is used.
+ * bottom-left action, optional double-click preview, and an optional retry
+ * (bottom-right). Replacing an existing image asks for confirmation here, so
+ * the overwrite guardrail is consistent everywhere the frame is used.
  */
 import { useTranslation } from "react-i18next";
 import { Maximize2, RotateCw, Star, Upload } from "lucide-react";

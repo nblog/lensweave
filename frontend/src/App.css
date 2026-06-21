@@ -2075,9 +2075,12 @@ button.primary:disabled {
 .inspector-image-frame .node-upload {
   top: 0.5rem;
   right: 0.5rem;
-  z-index: 4;
+  z-index: 7;
   background: rgba(43, 42, 40, 0.86);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+  color: #fff;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.34),
+    0 3px 10px rgba(0, 0, 0, 0.28);
 }
 
 .video-frame {
@@ -2118,11 +2121,11 @@ button.primary:disabled {
 }
 
 .node-preview,
-.node-favorite {
+.node-favorite,
+.node-retry,
+.node-upload {
   position: absolute;
-  left: 0.45rem;
-  bottom: 0.45rem;
-  z-index: 2;
+  z-index: 5;
   display: inline-grid;
   place-items: center;
   width: 1.8rem;
@@ -2131,47 +2134,34 @@ button.primary:disabled {
   border-radius: 999px;
   background: rgba(43, 42, 40, 0.72);
   color: #fff;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.22);
   cursor: pointer;
 }
 
+.node-preview,
 .node-favorite {
-  background: rgba(var(--color-primary-rgb), 0.78);
+  left: 0.45rem;
+  bottom: 0.45rem;
 }
 
+.node-preview:hover,
 .node-favorite:hover {
-  background: rgba(var(--color-primary-rgb), 0.92);
+  background: rgba(43, 42, 40, 0.84);
 }
 
 .node-retry {
-  position: absolute;
   right: 0.45rem;
   bottom: 0.45rem;
-  z-index: 2;
-  display: inline-grid;
-  place-items: center;
-  width: 1.8rem;
-  height: 1.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 999px;
-  background: rgba(43, 42, 40, 0.72);
-  color: #fff;
-  cursor: pointer;
 }
 
 .node-upload {
-  position: absolute;
   right: 0.45rem;
   top: 0.45rem;
-  z-index: 2;
-  display: inline-grid;
-  place-items: center;
-  width: 1.8rem;
-  height: 1.8rem;
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  border-radius: 999px;
-  background: rgba(43, 42, 40, 0.72);
-  color: #fff;
-  cursor: pointer;
+}
+
+.node-retry:not(:disabled):hover,
+.node-upload:hover {
+  background: rgba(43, 42, 40, 0.84);
 }
 
 .node-upload input {

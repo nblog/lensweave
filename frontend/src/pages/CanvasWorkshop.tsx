@@ -834,7 +834,7 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
             alt={node.label || t("canvas.nodeImage")}
             className="image-frame"
             onPreview={node.onPreviewImage}
-            previewTrigger={node.kind === "image_gen" ? "doubleClick" : "button"}
+            previewTrigger="doubleClick"
             onUpload={
               node.kind === "image"
                 ? (uri) => node.onUploadImage(id, uri)
@@ -1181,6 +1181,7 @@ function ImageNodeEditor({
         alt={node.data.label || t("canvas.nodeImage")}
         className="inspector-image-frame"
         onPreview={onPreviewImage}
+        previewTrigger="doubleClick"
         onUpload={(uri) => onChange(refId, node.data.label, uri)}
       />
     </div>
