@@ -2,8 +2,6 @@ import { createContext, useContext } from "react";
 
 export interface AuthContextValue {
   isAuthenticated: boolean;
-  username: string | null;
-  isAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }

@@ -7,7 +7,6 @@ import {
   Globe2,
   LogOut,
   UserRound,
-  UsersRound,
 } from "lucide-react";
 import {
   Link,
@@ -26,7 +25,6 @@ import { ProjectPage } from "./pages/ProjectPage";
 import { CanvasWorkshop } from "./pages/CanvasWorkshop";
 import { GlobalAssetsPage } from "./pages/GlobalAssetsPage";
 import { LoginPage } from "./pages/LoginPage";
-import { AdminUsersPage } from "./pages/AdminUsersPage";
 import "./App.css";
 
 function App() {
@@ -56,7 +54,7 @@ function LoginRoute() {
 
 function ProtectedApp() {
   const { t } = useTranslation();
-  const { isAuthenticated, isAdmin, logout, username } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
   const location = useLocation();
   const projectMatch = useMatch("/projects/:projectUid");
   const workshopMatch = useMatch(
@@ -105,22 +103,16 @@ function ProtectedApp() {
                 <Globe2 size={16} aria-hidden />
                 <span>{t("nav.globalAssets")}</span>
               </NavLink>
-              {isAdmin && (
-                <NavLink
-                  to="/admin/users"
-                  className={({ isActive }) =>
-                    isActive ? "navlink active" : "navlink"
-                  }
-                >
-                  <UsersRound size={16} aria-hidden />
-                  <span>{t("nav.users")}</span>
-                </NavLink>
-              )}
             </nav>
             <LanguageSwitcher />
-            <div className="session-chip" aria-label={t("auth.session")}>
-              <UserRound size={15} aria-hidden />
-              <span>{username ?? t("auth.user")}</span>
+            <div
+              className="session-chip"
+              aria-label={t("auth.session")}
+              title={t("auth.session")}
+            >
+              <span className="session-avatar" aria-hidden>
+                <UserRound size={16} />
+              </span>
               <button
                 className="session-logout"
                 type="button"
@@ -128,7 +120,7 @@ function ProtectedApp() {
                 aria-label={t("auth.logout")}
                 title={t("auth.logout")}
               >
-                <LogOut size={15} aria-hidden />
+                <LogOut size={16} aria-hidden />
               </button>
             </div>
           </div>
@@ -147,7 +139,6 @@ function ProtectedApp() {
           <Route path="/" element={<Navigate to="/projects" replace />} />
           <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/assets" element={<GlobalAssetsPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage />} />
           <Route path="/projects/:projectUid" element={<ProjectRoute />} />
           <Route
             path="/projects/:projectUid/episodes/:episodeId/workshop"

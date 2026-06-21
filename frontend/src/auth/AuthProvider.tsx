@@ -11,14 +11,10 @@ import { AuthContext } from "./auth-context";
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [token, setToken] = useState<string | null>(() => getStoredAuthToken());
-  const [username, setUsername] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
 
   const logout = useCallback(() => {
     setStoredAuthToken(null);
     setToken(null);
-    setUsername(null);
-    setIsAdmin(false);
     queryClient.clear();
   }, [queryClient]);
 
@@ -26,8 +22,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const session = await api.login({ username: name, password });
     setStoredAuthToken(session.token);
     setToken(session.token);
-    setUsername(session.username);
-    setIsAdmin(session.is_admin);
   }, []);
 
   useEffect(() => {
@@ -42,12 +36,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let ignore = false;
     void api
       .getSession()
-      .then((session) => {
-        if (!ignore) {
-          setUsername(session.username);
-          setIsAdmin(session.is_admin);
-        }
-      })
       .catch(() => {
         if (!ignore) logout();
       });
@@ -59,12 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => ({
       isAuthenticated: Boolean(token),
-      username,
-      isAdmin,
       login,
       logout,
     }),
-    [isAdmin, login, logout, token, username],
+    [login, logout, token],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

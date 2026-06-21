@@ -25,7 +25,7 @@ export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -125,6 +125,7 @@ export function LoginPage() {
                 <UserRound size={16} aria-hidden />
                 <input
                   id="login-username"
+                  autoFocus
                   autoComplete="username"
                   value={username}
                   placeholder={t("auth.usernamePlaceholder")}
@@ -139,7 +140,6 @@ export function LoginPage() {
                 <LockKeyhole size={16} aria-hidden />
                 <input
                   id="login-password"
-                  autoFocus
                   type="password"
                   autoComplete="current-password"
                   value={password}

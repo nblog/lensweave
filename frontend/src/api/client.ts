@@ -49,22 +49,6 @@ export interface AuthSession {
   is_admin: boolean;
 }
 
-export interface UserAccount {
-  id: number;
-  username: string;
-  is_admin: boolean;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface UserUpdate {
-  username?: string;
-  password?: string;
-  is_admin?: boolean;
-  is_active?: boolean;
-}
-
 export type AssetKind = "character" | "prop" | "scene";
 export type AssetScope = "global" | "fixed" | "temporary";
 
@@ -245,26 +229,6 @@ export const api = {
       body: JSON.stringify(body),
     }),
   getSession: () => request<AuthSession>("/api/auth/session"),
-
-  // admin users
-  listUsers: () => request<UserAccount[]>("/api/admin/users"),
-  createUser: (body: {
-    username: string;
-    password: string;
-    is_admin: boolean;
-    is_active?: boolean;
-  }) =>
-    request<UserAccount>("/api/admin/users", {
-      method: "POST",
-      body: JSON.stringify(body),
-    }),
-  updateUser: (userId: number, body: UserUpdate) =>
-    request<UserAccount>(`/api/admin/users/${userId}`, {
-      method: "PATCH",
-      body: JSON.stringify(body),
-    }),
-  deleteUser: (userId: number) =>
-    requestVoid(`/api/admin/users/${userId}`, { method: "DELETE" }),
 
   // model catalog
   getSeedanceVideoSettings: () =>

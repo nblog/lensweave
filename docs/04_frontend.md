@@ -35,7 +35,7 @@ src/i18n/
 
 资产按**全局 / 项目固定 / 单集临时**三层披露（ADR-005）。顶层入口仍是项目；进入项目后，左侧承载本系列分集列表与阶段导航，右侧显示当前阶段页面内容。顶栏的"全局资产"是全局源资产的唯一管理入口；项目页资产 stage 只展示项目固定资产与当前集临时资产，临时资产以左侧当前选中的分集为边界。
 
-页面流由 URL 路由承载，而不是用全局 nav/store 模拟页面状态：`/login` 是登录页，`/projects` 是项目列表，`/projects/:projectUid` 是项目工作台，`/projects/:projectUid/episodes/:episodeId/workshop` 是 EP 工坊。`projectUid` 来自后端 `Project.uid`，不使用数据库自增 `id`。项目工作台内部的剧本/资产 stage 是本页状态；涉及具体分集画布时再进入真实路由。除 `/login` 外，未登录访问任何页面都自动跳转到 `/login`，登录成功后回到原目标路由。
+页面流由 URL 路由承载，而不是用全局 nav/store 模拟页面状态：`/login` 是登录页，`/projects` 是项目列表，`/assets` 是全局资产库，`/projects/:projectUid` 是项目工作台，`/projects/:projectUid/episodes/:episodeId/workshop` 是 EP 工坊。`projectUid` 来自后端 `Project.uid`，不使用数据库自增 `id`。项目工作台内部的剧本/资产 stage 是本页状态；涉及具体分集画布时再进入真实路由。除 `/login` 外，未登录访问任何页面都自动跳转到 `/login`，登录成功后回到原目标路由。
 
 ```
 顶栏导航： [项目] [全局资产]  …………………………… [语言切换]
@@ -64,12 +64,12 @@ src/i18n/
 
 ### 2.1 顶层导航（项目 / 全局资产）
 
-顶栏提供"项目"、"全局资产"入口与语言切换；管理员登录时额外展示"用户账户"入口。`/projects` 是项目列表；`/assets` 是全局资产库，只展示和上传 `scope=global` 的源资产；`/admin/users` 是本地用户账户管理页。项目固定资产与单集临时资产仍进入项目工作台右侧管理。
+顶栏只提供"项目"、"全局资产"入口、语言切换与退出登录控件，不在 AI 短剧生产工作台里暴露用户账户管理。`/projects` 是项目列表；`/assets` 是全局资产库，只展示和上传 `scope=global` 的源资产。项目固定资产与单集临时资产仍进入项目工作台右侧管理。
 
 ### 2.1.5 登录与会话
 
 前端持有后端 `POST /api/auth/login` 返回的 bearer token，保存在 localStorage。所有 API 请求自动带 `Authorization` header；任何请求收到 401 时立即清空 token，并跳回 `/login`。登录页本身不显示工作台顶栏，避免未登录用户看到业务导航。
-管理员可进入 `/admin/users` 新建用户、重置密码、启停账号、切换 admin 权限；前端禁用删除 / 停用当前登录用户等明显会自锁的操作，后端仍是最终防线。
+前端工作台只负责生产路径的登录态校验与退出登录，不提供本地用户账户管理页。顶栏会话控件只显示账号图标与退出按钮，不展示 `username` 或 `is_admin`，避免长用户名或管理员标识挤占生产导航空间。
 
 ### 2.2 创建项目（项目入口首屏）
 
@@ -157,7 +157,7 @@ src/i18n/
 |---|---|---|
 | 服务端态 | TanStack Query | 项目/资产/分集/job，带缓存与轮询 |
 | 画布本地态 | Zustand | 画布**节点与连线**、节点位置、选中、未保存的编辑 |
-| 登录态 | localStorage + AuthProvider | bearer token + username/isAdmin；401 时清空并跳登录 |
+| 登录态 | localStorage + AuthProvider | bearer token；401 时清空并跳登录 |
 | 语言偏好 | localStorage | i18n 选择 |
 | 生成通道偏好 | localStorage | EP 工坊通道下拉（mock/routin） |
 
