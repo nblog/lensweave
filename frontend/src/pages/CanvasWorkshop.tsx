@@ -62,6 +62,7 @@ import {
   buildOrderedInputsByNodeId,
   currentRunElapsedMs,
   hasVideoPromptInput,
+  isActiveJobStatus,
   normalizeVideoDuration,
   normalizeVideoResolution,
   patchNodes,
@@ -144,7 +145,6 @@ export function CanvasWorkshop({
   const storeConnect = useCanvasStore((s) => s.connect);
   const addNodeToStore = useCanvasStore((s) => s.addNode);
   const reorderInput = useCanvasStore((s) => s.reorderInput);
-  const renderingNodeId = useCanvasStore((s) => s.renderingNodeId);
   const savedAt = useCanvasStore((s) => s.savedAt);
   const setContext = useCanvasStore((s) => s.setContext);
   const loadFromDto = useCanvasStore((s) => s.loadFromDto);
@@ -196,11 +196,16 @@ export function CanvasWorkshop({
     storeGenerationChannel(generationChannel);
   }, [generationChannel]);
 
+  const hasActiveGeneration = useMemo(
+    () => nodes.some((node) => isActiveJobStatus(node.data.jobStatus)),
+    [nodes],
+  );
+
   useEffect(() => {
-    if (!renderingNodeId) return;
+    if (!hasActiveGeneration) return;
     const timer = window.setInterval(() => setElapsedNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [renderingNodeId]);
+  }, [hasActiveGeneration]);
 
   useEffect(() => {
     resetCanvas();
@@ -314,6 +319,7 @@ export function CanvasWorkshop({
   };
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
+  const selectedIsRendering = isActiveJobStatus(selected?.data.jobStatus);
 
   const orderedInputsByNodeId = useMemo(
     () => buildOrderedInputsByNodeId(nodes, edges),
@@ -375,7 +381,7 @@ export function CanvasWorkshop({
           assets: assets.data ?? [],
           segments: segments.data ?? [],
           orderedInputs: orderedInputsByNodeId[n.id] ?? [],
-          isRendering: renderingNodeId === n.id,
+          isRendering: isActiveJobStatus(n.data.jobStatus),
           nowMs: elapsedNow,
           canRenderVideo:
             n.data.kind === "video_gen" &&
@@ -403,7 +409,6 @@ export function CanvasWorkshop({
       nodes,
       orderedInputsByNodeId,
       patchNode,
-      renderingNodeId,
       segments.data,
     ],
   );
@@ -577,10 +582,10 @@ export function CanvasWorkshop({
               <hr />
               <button
                 className="primary block"
-                disabled={renderingNodeId === selected.id}
+                disabled={selectedIsRendering}
                 onClick={() => handleGenerateText(selected.id)}
               >
-                {renderingNodeId === selected.id
+                {selectedIsRendering
                   ? t("canvas.generating")
                   : t("canvas.generateText")}
               </button>
@@ -598,10 +603,10 @@ export function CanvasWorkshop({
               <hr />
               <button
                 className="primary block"
-                disabled={renderingNodeId === selected.id}
+                disabled={selectedIsRendering}
                 onClick={() => handleGenerateImage(selected.id)}
               >
-                {renderingNodeId === selected.id
+                {selectedIsRendering
                   ? t("canvas.generating")
                   : t("canvas.generateImage")}
               </button>
@@ -618,7 +623,7 @@ export function CanvasWorkshop({
                     : undefined
                 }
                 onRetry={() => handleGenerateImage(selected.id)}
-                retryDisabled={renderingNodeId === selected.id}
+                retryDisabled={selectedIsRendering}
               />
             </>
           )}
@@ -682,10 +687,10 @@ export function CanvasWorkshop({
               </div>
               <button
                 className="primary block"
-                disabled={!selectedVideoCanRender || renderingNodeId === selected.id}
+                disabled={!selectedVideoCanRender || selectedIsRendering}
                 onClick={() => handleRenderVideo(selected.id)}
               >
-                {renderingNodeId === selected.id
+                {selectedIsRendering
                   ? t("canvas.rendering")
                   : t("canvas.render")}
               </button>

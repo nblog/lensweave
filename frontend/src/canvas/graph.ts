@@ -76,6 +76,12 @@ export const TERMINAL_JOB_STATUSES: Job["status"][] = [
   "canceled",
 ];
 
+export function isActiveJobStatus(
+  status: Job["status"] | undefined,
+): boolean {
+  return status === "queued" || status === "running";
+}
+
 export function isAdapterKind(kind: NodeKind): boolean {
   return Boolean(ADAPTER_INPUTS[kind]);
 }
@@ -366,7 +372,7 @@ export function currentRunElapsedMs(
 ): number | undefined {
   if (
     typeof node.generationStartedAt === "number" &&
-    (node.jobStatus === "queued" || node.jobStatus === "running")
+    isActiveJobStatus(node.jobStatus)
   ) {
     return elapsedMsSince(node.generationStartedAt, nowMs);
   }

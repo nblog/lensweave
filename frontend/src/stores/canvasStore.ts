@@ -91,7 +91,6 @@ type CanvasState = {
   videoSettings: VideoGenSettings | undefined;
   nodes: CanvasNode[];
   edges: Edge[];
-  renderingNodeId: string | null;
   savedAt: string;
   nodeSeq: number;
 
@@ -177,7 +176,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   videoSettings: undefined,
   nodes: [],
   edges: [],
-  renderingNodeId: null,
   savedAt: "",
   nodeSeq: 0,
 
@@ -185,7 +183,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set({ episodeId, videoSettings }),
 
   reset: () =>
-    set({ nodes: [], edges: [], renderingNodeId: null, savedAt: "", nodeSeq: 0 }),
+    set({ nodes: [], edges: [], savedAt: "", nodeSeq: 0 }),
 
   setNodes: (updater) =>
     set((s) => ({ nodes: resolveUpdater(updater, s.nodes) })),
@@ -312,7 +310,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           ? { imageUrl: undefined }
           : {};
     set((s) => ({
-      renderingNodeId: nodeId,
       nodes: patchNodes(
         s.nodes,
         nodeId,
@@ -347,10 +344,6 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       }));
       await get().persist().catch(() => undefined);
       throw error;
-    } finally {
-      set((s) => ({
-        renderingNodeId: s.renderingNodeId === nodeId ? null : s.renderingNodeId,
-      }));
     }
   },
 
