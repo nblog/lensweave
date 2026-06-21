@@ -35,8 +35,8 @@ _TINY_MP4_B64 = (
 )
 
 _TINY_PNG_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB"
-    "/6X3yAAAAABJRU5ErkJggg=="
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AA"
+    "AAMBAQDJ/pLvAAAAAElFTkSuQmCC"
 )
 
 
@@ -53,6 +53,8 @@ class MockImageAdapter(ImageAdapter):
     """Deterministic image adapter that writes a tiny PNG to the requested path."""
 
     async def generate(self, req: ImageGenRequest, *, out: Path) -> ImageGenResult:
+        if out.suffix == "":
+            out = out.with_suffix(".png")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(base64.b64decode(_TINY_PNG_B64))
         digest = hashlib.sha1(req.model_dump_json().encode("utf-8")).hexdigest()[:12]

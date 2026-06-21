@@ -110,6 +110,8 @@ POST   /api/jobs/{job_id}/resume          恢复轮询（服务端任务仍在�
 
 ## 4. 异步任务模型（ADR-003 落地）
 
+图像任务虽然当前同步完成，但也走同一张 `GenerationJob` 表：adapter 先把 provider 原图写入 `outputs/images/raw/`，service 层随后压缩出 `outputs/images/` 根目录下的工作副本，并在 `job.result.image_url` / `image_path` 返回该工作副本。`size_bytes` 表示工作副本大小；`raw_image_path` / `raw_size_bytes` 只用于归档追溯。这样后续图生图、图文生视频节点不会把多张 2MB+ 原图内联进 provider payload。
+
 ### 4.1 状态机
 
 `GenerationJob.status`（见 [01 §3](01_domain_model.md)）：

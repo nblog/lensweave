@@ -146,7 +146,7 @@ adapters/
 
 每个实现只做三件事：把 `*GenRequest` 翻译成 SDK 入参、调 SDK、把结果收敛回 `*GenResult`。PoC 脚本里的纯函数（如 [imagegen2.py](../test/imagegen2.py) 的 `_image_ref_to_content` / `_save_data_uri`、[videogen.py](../test/videogen.py) 的 `_build_content` / `_image_ref_to_url`）可直接搬进对应实现的私有方法，保留 PoC 已踩过的坑（如 Ark image content 必填 `role`、本地图内联为 base64 data URI）。
 
-工程版还要处理一个前后端边界：生成图片返回给前端的是浏览器预览 URL（如 `/images/xxx.png`），而图生图 / 图文生视频适配器需要的是可读本地文件或远端可访问 URL。因此 routin adapter 在真正组装 provider 请求前，会把后端自身的 `/images/...` 静态 URL 还原到 `outputs/images/...` 再内联为 data URI；不要把 `/images/...` 当作文件系统根目录路径。
+工程版还要处理一个前后端边界：生成图片返回给前端的是浏览器预览 URL（如 `/images/xxx.webp`），而图生图 / 图文生视频适配器需要的是可读本地文件或远端可访问 URL。因此 routin adapter 在真正组装 provider 请求前，会把后端自身的 `/images/...` 静态 URL 还原到 `outputs/images/...` 再内联为 data URI；不要把 `/images/...` 当作文件系统根目录路径。图像生成 job 会先把 provider 原图归档到 `outputs/images/raw/`，再由 service 层用 Pillow 生成几百 KB 量级的工作副本写到 `outputs/images/` 根目录；前端预览、画布持久化、后续 ImageGen / VideoGen 节点都只使用压缩后的工作副本，raw 仅用于归档和人工追溯。
 
 配置（base_url / api_key / 默认模型）从 pydantic-settings 注入，不再硬编码：
 

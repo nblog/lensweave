@@ -28,10 +28,12 @@ from ai_drama.adapters.registry import (
 from ai_drama.config import GENERATED_CLIPS_DIR, GENERATED_IMAGES_DIR
 from ai_drama.db import Episode, GenerationJob, Segment, SessionLocal
 from ai_drama.models import JobStatus
+from ai_drama.services.image_compression import compress_image_for_delivery
 
 # Where downloaded clips land. Mirrors the project ``outputs/`` convention.
 CLIPS_DIR = GENERATED_CLIPS_DIR
 IMAGES_DIR = GENERATED_IMAGES_DIR
+RAW_IMAGES_DIR = IMAGES_DIR / "raw"
 logger = logging.getLogger(__name__)
 
 
@@ -151,26 +153,44 @@ async def generate_image_job(
     )
     job.status = JobStatus.RUNNING.value
     db.commit()
-    out = IMAGES_DIR / f"{episode_id}_{safe_node_id(output_node_id)}_{job.id}"
+    stem = f"{episode_id}_{safe_node_id(output_node_id)}_{job.id}"
+    raw_out = RAW_IMAGES_DIR / stem
     try:
         adapter = get_image_adapter(channel)
-        result = await adapter.generate(request, out=out)
+        result = await adapter.generate(request, out=raw_out)
+        compressed = await asyncio.to_thread(
+            compress_image_for_delivery,
+            result.image_path,
+            output_stem=IMAGES_DIR / Path(result.image_path).stem,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("image job %s failed for node %s", job.id, output_node_id)
         _mark(db, job, JobStatus.FAILED, error=str(exc))
     else:
-        image_path = result.image_path
+        image_path = str(compressed.image_path)
         job.status = JobStatus.SUCCEEDED.value
         job.result = {
             **result.model_dump(mode="json"),
+            "image_path": image_path,
+            "size_bytes": compressed.size_bytes,
+            "raw_image_path": str(compressed.raw_image_path),
+            "raw_size_bytes": compressed.raw_size_bytes,
+            "compression": {
+                "target_bytes": compressed.target_bytes,
+                "format": compressed.format,
+                "lossless": compressed.lossless,
+                "quality": compressed.quality,
+                "scale": compressed.scale,
+            },
             "image_url": image_url(image_path),
         }
         db.commit()
         logger.info(
-            "image job %s succeeded for node %s -> %s",
+            "image job %s succeeded for node %s -> %s (raw: %s)",
             job.id,
             output_node_id,
             image_path,
+            compressed.raw_image_path,
         )
     db.refresh(job)
     return job
@@ -285,6 +305,7 @@ def ensure_clips_dir() -> Path:
 
 def ensure_images_dir() -> Path:
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
+    RAW_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     return IMAGES_DIR
 
 

@@ -102,6 +102,15 @@ export interface JobResult {
   image_path?: string | null;
   image_url?: string | null;
   size_bytes?: number;
+  raw_image_path?: string | null;
+  raw_size_bytes?: number;
+  compression?: {
+    target_bytes: number;
+    format: string;
+    lossless: boolean;
+    quality: number | null;
+    scale: number;
+  };
   response_id?: string | null;
   video_url?: string | null;
   clip_path?: string | null;
