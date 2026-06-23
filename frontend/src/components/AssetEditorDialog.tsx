@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { ImageOff, Trash2, X } from "lucide-react";
 import {
@@ -41,7 +41,9 @@ export function AssetEditorDialog({
   const [isDeleting, setIsDeleting] = useState(false);
   const isBusy = isSaving || isDeleting;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (
+    event: SyntheticEvent<HTMLFormElement, SubmitEvent>,
+  ) => {
     event.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) {

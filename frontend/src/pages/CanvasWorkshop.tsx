@@ -15,7 +15,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type FormEvent,
+  type SyntheticEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -1418,7 +1418,9 @@ function GeneratedAssetDialog({
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (
+    event: SyntheticEvent<HTMLFormElement, SubmitEvent>,
+  ) => {
     event.preventDefault();
     const trimmedName = name.trim();
     if (!trimmedName) {

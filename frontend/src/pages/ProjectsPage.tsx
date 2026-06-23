@@ -3,7 +3,7 @@
  * front and center, lists existing projects, and opens one into its detail
  * view. Server state is managed by TanStack Query.
  */
-import { useState } from "react";
+import { useState, type SyntheticEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Clock } from "lucide-react";
@@ -30,7 +30,7 @@ export function ProjectsPage() {
     },
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: SyntheticEvent<HTMLFormElement, SubmitEvent>) => {
     e.preventDefault();
     if (title.trim()) createProject.mutate(title.trim());
   };
