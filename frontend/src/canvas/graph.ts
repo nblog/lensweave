@@ -14,6 +14,7 @@ import {
 } from "../utils/datetime";
 import type {
   CanvasGraphDTO,
+  CanvasNodePositionDTO,
   Job,
   NodeKind,
   VideoGenSettings,
@@ -38,6 +39,8 @@ export type NodeData = {
 };
 
 export type CanvasNode = Node<NodeData, "canvasNode">;
+
+export const TEXT_NODE_MIN_SIZE = { width: 260, height: 140 } as const;
 
 export type InputSummary = {
   id: string;
@@ -108,7 +111,7 @@ export function flowToDto(
       kind: n.data.kind,
       name: n.data.label,
       ref_id: n.data.refId,
-      position: [n.position.x, n.position.y],
+      position: nodePositionToDto(n),
       data: nodeDataToPayload(n.data, videoSettings),
     })),
     edges: edges.map((e) => ({
@@ -125,28 +128,47 @@ export function dtoToFlow(graph: CanvasGraphDTO): {
   edges: Edge[];
 } {
   return {
-    nodes: graph.nodes.map((n) => ({
-      id: n.id,
-      position: { x: n.position[0], y: n.position[1] },
-      type: "canvasNode",
-      data: {
-        kind: n.kind,
-        label: normalizeNodeLabel(n.name, n.kind),
-        refId: n.ref_id,
-        text: readString(n.data?.visual_prompt) ?? readString(n.data?.text),
-        imageUrl: readString(n.data?.image_uri) ?? readString(n.data?.image_url),
-        videoUrl: readString(n.data?.video_url),
-        clipPath: readString(n.data?.clip_path) ?? null,
-        videoDuration: readVideoDuration(n.data?.duration),
-        videoResolution: readVideoResolution(n.data?.resolution),
-        jobId: readString(n.data?.job_id),
-        jobStatus: readJobStatus(n.data?.job_status),
-        jobError: readString(n.data?.job_error) ?? null,
-        generatedAt: readString(n.data?.generated_at),
-        generationStartedAt: readNumber(n.data?.generation_started_at),
-        generationElapsedMs: readNumber(n.data?.generation_elapsed_ms),
-      },
-    })),
+    nodes: graph.nodes.map((n) => {
+      const position = readDtoPosition(n.position);
+      const size =
+        isTextLikeKind(n.kind) &&
+        position.width != null &&
+        position.height != null
+          ? clampTextNodeSize({
+              width: position.width,
+              height: position.height,
+            })
+          : null;
+      return {
+        id: n.id,
+        position: { x: position.x, y: position.y },
+        type: "canvasNode",
+        ...(size
+          ? {
+              width: size.width,
+              height: size.height,
+              style: { width: size.width, height: size.height },
+            }
+          : {}),
+        data: {
+          kind: n.kind,
+          label: normalizeNodeLabel(n.name, n.kind),
+          refId: n.ref_id,
+          text: readString(n.data?.visual_prompt) ?? readString(n.data?.text),
+          imageUrl: readString(n.data?.image_uri) ?? readString(n.data?.image_url),
+          videoUrl: readString(n.data?.video_url),
+          clipPath: readString(n.data?.clip_path) ?? null,
+          videoDuration: readVideoDuration(n.data?.duration),
+          videoResolution: readVideoResolution(n.data?.resolution),
+          jobId: readString(n.data?.job_id),
+          jobStatus: readJobStatus(n.data?.job_status),
+          jobError: readString(n.data?.job_error) ?? null,
+          generatedAt: readString(n.data?.generated_at),
+          generationStartedAt: readNumber(n.data?.generation_started_at),
+          generationElapsedMs: readNumber(n.data?.generation_elapsed_ms),
+        },
+      };
+    }),
     edges: graph.edges.map((e) => ({
       id: e.id,
       source: e.source,
@@ -188,6 +210,40 @@ export function nodeDataToPayload(
     payload.generation_elapsed_ms = data.generationElapsedMs;
   }
   return payload;
+}
+
+function nodePositionToDto(node: CanvasNode): CanvasNodePositionDTO {
+  const position: CanvasNodePositionDTO = {
+    x: node.position.x,
+    y: node.position.y,
+  };
+  const size = storedNodeSize(node);
+  if (size) {
+    position.width = size.width;
+    position.height = size.height;
+  }
+  return position;
+}
+
+function storedNodeSize(node: CanvasNode): { width: number; height: number } | null {
+  if (!isTextLikeKind(node.data.kind)) {
+    return null;
+  }
+  const style = node.style as { width?: unknown; height?: unknown } | undefined;
+  const width = readNumber(style?.width);
+  const height = readNumber(style?.height);
+  if (width == null || height == null || width <= 0 || height <= 0) {
+    return null;
+  }
+  return clampTextNodeSize({ width, height });
+}
+
+export function hasExplicitTextNodeSize(node: CanvasNode): boolean {
+  return storedNodeSize(node) != null;
+}
+
+function isTextLikeKind(kind: NodeKind): boolean {
+  return kind === "text" || kind === "text_gen";
 }
 
 // --- ordered inputs (docs/04 §3.2: order = context order) ---
@@ -356,6 +412,39 @@ export function readJobStatus(value: unknown): Job["status"] | undefined {
     return value;
   }
   return undefined;
+}
+
+function readDtoPosition(value: unknown): CanvasNodePositionDTO {
+  if (Array.isArray(value) && value.length === 2) {
+    const [x, y] = value;
+    return {
+      x: readNumber(x) ?? 0,
+      y: readNumber(y) ?? 0,
+    };
+  }
+  if (!value || typeof value !== "object") {
+    return { x: 0, y: 0 };
+  }
+  const position = value as Record<string, unknown>;
+  const width = readNumber(position.width);
+  const height = readNumber(position.height);
+  return {
+    x: readNumber(position.x) ?? 0,
+    y: readNumber(position.y) ?? 0,
+    ...(width != null && height != null && width > 0 && height > 0
+      ? { width, height }
+      : {}),
+  };
+}
+
+export function clampTextNodeSize(size: {
+  width: number;
+  height: number;
+}): { width: number; height: number } {
+  return {
+    width: Math.max(TEXT_NODE_MIN_SIZE.width, size.width),
+    height: Math.max(TEXT_NODE_MIN_SIZE.height, size.height),
+  };
 }
 
 export function formatCanvasTimestamp(date = new Date()): string {

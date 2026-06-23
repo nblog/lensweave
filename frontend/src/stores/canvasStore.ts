@@ -56,6 +56,13 @@ import { layoutGraph } from "../canvas/layout";
 
 type NodesUpdater = CanvasNode[] | ((nodes: CanvasNode[]) => CanvasNode[]);
 type EdgesUpdater = Edge[] | ((edges: Edge[]) => Edge[]);
+type CanvasPosition = { x: number; y: number };
+
+const PALETTE_FALLBACK_ORIGIN: CanvasPosition = { x: 80, y: 70 };
+const PALETTE_FALLBACK_STEP: CanvasPosition = { x: 36, y: 28 };
+const PALETTE_COLLISION_STEP: CanvasPosition = { x: 44, y: 36 };
+const PALETTE_COLLISION_THRESHOLD: CanvasPosition = { x: 36, y: 32 };
+const MAX_PALETTE_COLLISION_PROBES = 24;
 
 export type CommandResult<T = void> =
   | ({ ok: true } & (T extends void ? object : { value: T }))
@@ -108,8 +115,12 @@ type CanvasState = {
   onEdgesChange: (changes: EdgeChange[]) => void;
   /** Port-type-checked connect for the UI's onConnect (silently ignores bad). */
   connect: (conn: Connection) => void;
-  /** Palette "add node": generates an id + cascade position (manual layout). */
-  addNode: (kind: NodeKind, label: string) => string;
+  /** Palette "add node": generates an id + viewport-aware manual position. */
+  addNode: (
+    kind: NodeKind,
+    label: string,
+    position?: CanvasPosition,
+  ) => string;
   reorderInput: (
     targetId: string,
     sourceId: string,
@@ -209,7 +220,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     set({ edges: addEdge({ ...conn, data: { order } }, edges) });
   },
 
-  addNode: (kind, label) => {
+  addNode: (kind, label, position) => {
     const { nodes, videoSettings, nodeSeq } = get();
     const { id, seq } = nextPaletteNodeId(kind, nodes, nodeSeq);
     const data: NodeData = {
@@ -223,13 +234,17 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           }
         : {}),
     };
+    const fallbackPosition = {
+      x: PALETTE_FALLBACK_ORIGIN.x + nodes.length * PALETTE_FALLBACK_STEP.x,
+      y: PALETTE_FALLBACK_ORIGIN.y + nodes.length * PALETTE_FALLBACK_STEP.y,
+    };
     set({
       nodeSeq: seq,
       nodes: [
         ...nodes,
         {
           id,
-          position: { x: 80 + nodes.length * 36, y: 70 + nodes.length * 28 },
+          position: resolvePalettePosition(position ?? fallbackPosition, nodes),
           data,
           type: "canvasNode",
         },
@@ -647,6 +662,32 @@ function maxPaletteNodeSeq(nodes: CanvasNode[]): number {
     const seq = Number(match[1]);
     return Number.isFinite(seq) ? Math.max(maxSeq, seq) : maxSeq;
   }, 0);
+}
+
+function resolvePalettePosition(
+  base: CanvasPosition,
+  nodes: CanvasNode[],
+): CanvasPosition {
+  let candidate = base;
+  let probe = 0;
+  while (
+    probe < MAX_PALETTE_COLLISION_PROBES &&
+    nodes.some((node) => positionsCollide(node.position, candidate))
+  ) {
+    probe += 1;
+    candidate = {
+      x: base.x + probe * PALETTE_COLLISION_STEP.x,
+      y: base.y + probe * PALETTE_COLLISION_STEP.y,
+    };
+  }
+  return candidate;
+}
+
+function positionsCollide(a: CanvasPosition, b: CanvasPosition): boolean {
+  return (
+    Math.abs(a.x - b.x) < PALETTE_COLLISION_THRESHOLD.x &&
+    Math.abs(a.y - b.y) < PALETTE_COLLISION_THRESHOLD.y
+  );
 }
 
 /** Upsert a node by id into a state object, returning the new state. */

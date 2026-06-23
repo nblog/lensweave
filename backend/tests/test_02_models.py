@@ -58,6 +58,43 @@ def test_segment_duration_cap():
         Segment(segment_id=1, duration_sec=16, visual_prompt="too long")
 
 
+def test_canvas_node_position_persists_optional_size():
+    node = CanvasNode(
+        id="t",
+        kind=NodeKind.TEXT,
+        position={"x": 10, "y": 20, "width": 320, "height": 180},
+    )
+
+    payload = node.model_dump(mode="json")
+
+    assert payload["position"] == {
+        "x": 10.0,
+        "y": 20.0,
+        "width": 320.0,
+        "height": 180.0,
+    }
+
+
+def test_canvas_node_position_reads_legacy_coordinate_tuple():
+    node = CanvasNode.model_validate(
+        {"id": "t", "kind": "text", "position": [10, 20]},
+    )
+
+    assert node.position.x == 10
+    assert node.position.y == 20
+    assert node.position.width is None
+    assert node.position.height is None
+
+
+def test_canvas_node_position_rejects_partial_size():
+    with pytest.raises(ValidationError, match="provided together"):
+        CanvasNode(
+            id="t",
+            kind=NodeKind.TEXT,
+            position={"x": 0, "y": 0, "width": 320},
+        )
+
+
 def test_canvas_rejects_cycle():
     # Two adapter nodes feeding each other — text_gen accepts text input.
     with pytest.raises(ValidationError, match="acyclic"):

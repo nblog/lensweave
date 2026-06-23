@@ -65,12 +65,19 @@ export type NodeKind =
   | "image_gen"
   | "video_gen";
 
+export interface CanvasNodePositionDTO {
+  x: number;
+  y: number;
+  width?: number | null;
+  height?: number | null;
+}
+
 export interface CanvasNodeDTO {
   id: string;
   kind: NodeKind;
   name: string;
   ref_id: number | null;
-  position: [number, number];
+  position: CanvasNodePositionDTO;
   data: Record<string, unknown>;
 }
 

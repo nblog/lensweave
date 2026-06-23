@@ -13,6 +13,41 @@ import asyncio
 import time
 
 
+def test_canvas_position_size_round_trips_over_http(client) -> None:
+    project = client.post("/api/projects", json={"title": "Canvas Geometry"}).json()
+    episode = client.post(
+        f"/api/projects/{project['uid']}/episodes",
+        json={"episode_no": 1, "title": "EP01"},
+    ).json()
+
+    canvas = {
+        "episode_id": episode["id"],
+        "nodes": [
+            {
+                "id": "txt",
+                "kind": "text",
+                "position": {"x": 12, "y": 34, "width": 420, "height": 220},
+                "data": {"visual_prompt": "wide prompt"},
+            },
+        ],
+        "edges": [],
+    }
+
+    assert (
+        client.put(f"/api/episodes/{episode['id']}/canvas", json=canvas).status_code
+        == 200
+    )
+
+    saved = client.get(f"/api/episodes/{episode['id']}/canvas").json()
+
+    assert saved["nodes"][0]["position"] == {
+        "x": 12.0,
+        "y": 34.0,
+        "width": 420.0,
+        "height": 220.0,
+    }
+
+
 def test_episode_video_render_e2e_without_segments(client) -> None:
     project = client.post("/api/projects", json={"title": "E2E"}).json()
     project_uid = project["uid"]

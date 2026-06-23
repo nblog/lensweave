@@ -262,18 +262,26 @@ ADAPTER_INPUT_TYPES: dict[NodeKind, set[PortType]] = {
     NodeKind.VIDEO_GEN: {PortType.TEXT, PortType.IMAGE},
 }
 
+class CanvasNodePosition(BaseModel):
+    x: float = 0.0
+    y: float = 0.0
+    width: float | None = None     # 可选：用户调整后的节点宽度
+    height: float | None = None    # 可选：用户调整后的节点高度
+
 class CanvasNode(BaseModel):
     """对应 Node 继承体系的扁平 DTO（kind 区分子类型）。
 
-    基类语义：每个节点都有 id / name / position / data。``ref_id`` 让
-    ImageNode 引用当前 episode 可见 Asset（全局 / 项目 / 本集临时，人物/道具/场景语义由 Asset.kind 承载），或让
-    内容型 TextNode 绑定某个 Segment。
+    基类语义：每个节点都有 id / name / position / data。``position`` 是
+    节点几何信息的唯一入口，``x`` / ``y`` 必填，``width`` / ``height``
+    成对可选；不要把 UI 尺寸继续塞进 ``data``。``ref_id`` 让 ImageNode
+    引用当前 episode 可见 Asset（全局 / 项目 / 本集临时，人物/道具/场景语义由
+    Asset.kind 承载），或让内容型 TextNode 绑定某个 Segment。
     """
     id: str
     kind: NodeKind
     name: str = ""
     ref_id: int | None = None      # ImageNode→Asset.id / TextNode→Segment.id
-    position: tuple[float, float] = (0.0, 0.0)
+    position: CanvasNodePosition = Field(default_factory=CanvasNodePosition)
     data: dict = {}                # 文本值 / 生成参数覆盖 等
 
 class CanvasEdge(BaseModel):

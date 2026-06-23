@@ -11,7 +11,12 @@ callers can ``from ai_drama.models import ProjectCreate`` regardless of layout.
 from __future__ import annotations
 
 from ai_drama.models.asset import AssetCreate, AssetRead, AssetUpdate
-from ai_drama.models.canvas import CanvasEdge, CanvasGraph, CanvasNode
+from ai_drama.models.canvas import (
+    CanvasEdge,
+    CanvasGraph,
+    CanvasNode,
+    CanvasNodePosition,
+)
 from ai_drama.models.enums import (
     ADAPTER_INPUT_TYPES,
     ADAPTER_NODE_JOB_KIND,
@@ -46,6 +51,7 @@ __all__ = [
     "CanvasEdge",
     "CanvasGraph",
     "CanvasNode",
+    "CanvasNodePosition",
     "DialogueLine",
     "EpisodeCreate",
     "EpisodeRead",

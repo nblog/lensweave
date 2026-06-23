@@ -11,6 +11,8 @@ accept no input).
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field, model_validator
 
 from ai_drama.models.enums import (
@@ -18,6 +20,28 @@ from ai_drama.models.enums import (
     NODE_OUTPUT_TYPE,
     NodeKind,
 )
+
+
+class CanvasNodePosition(BaseModel):
+    """Canvas geometry for a node: location plus optional persisted size."""
+
+    x: float = 0.0
+    y: float = 0.0
+    width: float | None = Field(default=None, gt=0)
+    height: float | None = Field(default=None, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_tuple(cls, value: Any) -> Any:
+        if isinstance(value, (list, tuple)) and len(value) == 2:
+            return {"x": value[0], "y": value[1]}
+        return value
+
+    @model_validator(mode="after")
+    def _validate_size_pair(self) -> "CanvasNodePosition":
+        if (self.width is None) != (self.height is None):
+            raise ValueError("canvas node width and height must be provided together")
+        return self
 
 
 class CanvasNode(BaseModel):
@@ -33,7 +57,7 @@ class CanvasNode(BaseModel):
     kind: NodeKind
     name: str = ""
     ref_id: int | None = None  # IMAGE→Asset.id / TEXT→Segment.id
-    position: tuple[float, float] = (0.0, 0.0)
+    position: CanvasNodePosition = Field(default_factory=CanvasNodePosition)
     data: dict = Field(default_factory=dict)
 
 

@@ -14,6 +14,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type FormEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
@@ -60,13 +61,16 @@ import {
 import {
   ADAPTER_INPUTS,
   buildOrderedInputsByNodeId,
+  clampTextNodeSize,
   currentRunElapsedMs,
+  hasExplicitTextNodeSize,
   hasVideoPromptInput,
   isActiveJobStatus,
   NODE_OUTPUT,
   normalizeVideoDuration,
   normalizeVideoResolution,
   patchNodes,
+  TEXT_NODE_MIN_SIZE,
   type CanvasNode,
   type InputSummary,
   type NodeData,
@@ -92,6 +96,7 @@ type RuntimeNodeData = NodeData & {
   nowMs: number;
   canRenderVideo: boolean;
   onPatchNode: (id: string, patch: Partial<NodeData>) => void;
+  onResizeNode: (id: string, size: CanvasSize) => void;
   onUploadImage: (id: string, imageUri: string) => void;
   onPreviewImage: (src: string, title: string) => void;
   onAddImageAsset: (id: string) => void;
@@ -112,6 +117,21 @@ type ProjectGeneratedAssetScope = Extract<AssetScope, "fixed" | "temporary">;
 const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "prop", "scene"];
 const GENERATION_CHANNEL_STORAGE_KEY = "ai-drama:generation-channel";
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeCard };
+type CanvasPosition = { x: number; y: number };
+type CanvasSize = { width: number; height: number };
+type InsertNodeSize = { width: number; height: number };
+type FlowPositionProjector = {
+  screenToFlowPosition: (position: CanvasPosition) => CanvasPosition;
+};
+
+const DEFAULT_INSERT_NODE_SIZE: InsertNodeSize = { ...TEXT_NODE_MIN_SIZE };
+const TEXT_NODE_CHROME_SIZE: CanvasSize = { width: 27, height: 58 };
+const INSERT_NODE_SIZES: Partial<Record<NodeKind, InsertNodeSize>> = {
+  image: { width: 260, height: 245 },
+  image_gen: { width: 260, height: 245 },
+  video: { width: 260, height: 230 },
+  video_gen: { width: 280, height: 280 },
+};
 
 export function CanvasWorkshop({
   projectUid,
@@ -165,6 +185,8 @@ export function CanvasWorkshop({
   );
   const [elapsedNow, setElapsedNow] = useState(() => Date.now());
   const draggedInputIdRef = useRef<string | null>(null);
+  const flowRef = useRef<HTMLDivElement | null>(null);
+  const flowInstanceRef = useRef<FlowPositionProjector | null>(null);
 
   // Publish episode + catalog context into the store so store actions (and the
   // WebMCP tools) have what they need.
@@ -220,6 +242,31 @@ export function CanvasWorkshop({
   const patchNode = useCallback(
     (id: string, patch: Partial<NodeData>) => {
       updateNode(setNodes, id, patch);
+    },
+    [setNodes],
+  );
+
+  const patchNodeSize = useCallback(
+    (id: string, size: CanvasSize) => {
+      setNodes((ns) =>
+        ns.map((node) => {
+          if (node.id !== id) return node;
+          const nextSize =
+            node.data.kind === "text" || node.data.kind === "text_gen"
+              ? clampTextNodeSize(size)
+              : size;
+          return {
+            ...node,
+            width: nextSize.width,
+            height: nextSize.height,
+            style: {
+              ...node.style,
+              width: nextSize.width,
+              height: nextSize.height,
+            },
+          };
+        }),
+      );
     },
     [setNodes],
   );
@@ -316,8 +363,31 @@ export function CanvasWorkshop({
     [confirm, t],
   );
 
+  const paletteNodePosition = useCallback(
+    (kind: NodeKind): CanvasPosition | undefined => {
+      const flow = flowRef.current;
+      const instance = flowInstanceRef.current;
+      if (!flow || !instance) return undefined;
+
+      const rect = flow.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return undefined;
+
+      const center = instance.screenToFlowPosition({
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      });
+      const size = INSERT_NODE_SIZES[kind] ?? DEFAULT_INSERT_NODE_SIZE;
+      return {
+        x: center.x - size.width / 2,
+        y: center.y - size.height / 2,
+      };
+    },
+    [],
+  );
+
   const addNode = (kind: NodeKind, label: string) => {
-    addNodeToStore(kind, label);
+    const id = addNodeToStore(kind, label, paletteNodePosition(kind));
+    setSelectedId(id);
   };
 
   const selected = nodes.find((n) => n.id === selectedId) ?? null;
@@ -389,6 +459,7 @@ export function CanvasWorkshop({
             n.data.kind === "video_gen" &&
             hasVideoPromptInput(n.id, nodes, edges),
           onPatchNode: patchNode,
+          onResizeNode: patchNodeSize,
           onUploadImage: handleUploadImage,
           onPreviewImage: handlePreviewImage,
           onAddImageAsset: handleAddImageAsset,
@@ -396,7 +467,13 @@ export function CanvasWorkshop({
           onGenerateImage: handleGenerateImage,
           onRenderVideo: handleRenderVideo,
         } satisfies RuntimeNodeData,
-        className: `rf-node rf-${n.data.kind}`,
+        className: [
+          "rf-node",
+          `rf-${n.data.kind}`,
+          hasExplicitTextNodeSize(n) ? "rf-explicit-size" : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
       })),
     [
       assets.data,
@@ -411,6 +488,7 @@ export function CanvasWorkshop({
       nodes,
       orderedInputsByNodeId,
       patchNode,
+      patchNodeSize,
       segments.data,
     ],
   );
@@ -464,7 +542,7 @@ export function CanvasWorkshop({
       <p className="canvas-hint">{t("canvas.hint")}</p>
 
       <div className="canvas-area">
-        <div className="flow">
+        <div className="flow" ref={flowRef}>
           {/* Top-left status overlay: node count + last saved (no assets). */}
           <div className="canvas-status">
             <span>
@@ -490,6 +568,9 @@ export function CanvasWorkshop({
               if (deleted.some((node) => node.id === selectedId)) {
                 setSelectedId(null);
               }
+            }}
+            onInit={(instance) => {
+              flowInstanceRef.current = instance;
             }}
             deleteKeyCode={["Delete", "Backspace"]}
             fitView
@@ -752,9 +833,24 @@ export function CanvasWorkshop({
   );
 }
 
-function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
+function CanvasNodeCard({
+  id,
+  data,
+  selected,
+  isConnectable,
+}: NodeProps) {
   const { t } = useTranslation();
   const node = data as RuntimeNodeData;
+  const explicitWidth = useCanvasStore((s) =>
+    textNodeStyleDimension(s.nodes, id, "width"),
+  );
+  const explicitHeight = useCanvasStore((s) =>
+    textNodeStyleDimension(s.nodes, id, "height"),
+  );
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  const [textNodeChrome, setTextNodeChrome] = useState<CanvasSize>(
+    TEXT_NODE_CHROME_SIZE,
+  );
   const kindLabel = t(`canvas.${nodeKindLabelKey(node.kind)}`);
   const isAdapter = Boolean(ADAPTER_INPUTS[node.kind]);
   const isTextLike = node.kind === "text" || node.kind === "text_gen";
@@ -763,9 +859,50 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
   const showKindBadge = canRenameNodeTitle(node.kind);
   const imagePreview = imagePreviewUrl(node, node.assets);
   const videoPreview = videoPreviewUrl(node);
+  const explicitSize =
+    explicitWidth != null && explicitHeight != null
+      ? clampTextNodeSize({ width: explicitWidth, height: explicitHeight })
+      : undefined;
+  const textAreaStyle =
+    explicitSize != null
+      ? ({
+          width: Math.max(0, explicitSize.width - textNodeChrome.width),
+          height: Math.max(0, explicitSize.height - textNodeChrome.height),
+        } satisfies CSSProperties)
+      : undefined;
+
+  useEffect(() => {
+    const card = cardRef.current;
+    const textarea = card?.querySelector<HTMLTextAreaElement>(".node-textarea");
+    if (!card || !textarea) return;
+
+    const cardRect = card.getBoundingClientRect();
+    const textareaRect = textarea.getBoundingClientRect();
+    const nextChrome = {
+      width: Math.max(0, Math.round(cardRect.width - textareaRect.width)),
+      height: Math.max(0, Math.round(cardRect.height - textareaRect.height)),
+    };
+    setTextNodeChrome((current) =>
+      current.width === nextChrome.width && current.height === nextChrome.height
+        ? current
+        : nextChrome,
+    );
+  }, [isTextLike]);
+
+  const onResizeNode = node.onResizeNode;
+  const handleTextAreaSizeChange = useCallback(
+    ({ width: textAreaWidth, height: textAreaHeight }: CanvasSize) => {
+      onResizeNode(id, clampTextNodeSize({
+        width: textAreaWidth + textNodeChrome.width,
+        height: textAreaHeight + textNodeChrome.height,
+      }));
+    },
+    [id, onResizeNode, textNodeChrome],
+  );
 
   return (
     <div
+      ref={cardRef}
       className={`canvas-node canvas-node-${node.kind}${selected ? " selected" : ""}${
         node.isRendering ? " is-generating" : ""
       }`}
@@ -787,7 +924,9 @@ function CanvasNodeCard({ id, data, selected, isConnectable }: NodeProps) {
             rows={node.kind === "text_gen" ? 3 : 4}
             value={node.text ?? ""}
             placeholder={t("canvas.textValue")}
+            style={textAreaStyle}
             onChange={(value) => node.onPatchNode(id, { text: value })}
+            onSizeChange={handleTextAreaSizeChange}
           />
           {node.kind === "text_gen" && (
             <button
@@ -931,6 +1070,23 @@ function updateNode(
   setNodes((ns) => patchNodes(ns, id, patch));
 }
 
+function textNodeStyleDimension(
+  nodes: CanvasNode[],
+  id: string,
+  dimension: "width" | "height",
+): number | undefined {
+  const node = nodes.find((n) => n.id === id);
+  if (!node || (node.data.kind !== "text" && node.data.kind !== "text_gen")) {
+    return undefined;
+  }
+  const style = node.style as { width?: unknown; height?: unknown } | undefined;
+  const value = style?.[dimension];
+  if (typeof value !== "number" || value <= 0) {
+    return undefined;
+  }
+  return value;
+}
+
 function NodeGenerationOverlay({ node }: { node: RuntimeNodeData }) {
   const { t } = useTranslation();
   const elapsedMs = currentRunElapsedMs(node, node.nowMs);
@@ -1014,15 +1170,22 @@ function ImeTextarea({
   className,
   rows,
   placeholder,
+  style,
+  onSizeChange,
 }: {
   value: string;
   onChange: (value: string) => void;
   className?: string;
   rows?: number;
   placeholder?: string;
+  style?: CSSProperties;
+  onSizeChange?: (size: CanvasSize) => void;
 }) {
   const [draft, setDraft] = useState(value);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const isComposingRef = useRef(false);
+  const didObserveSizeRef = useRef(false);
+  const lastSizeRef = useRef<CanvasSize | null>(null);
 
   useEffect(() => {
     if (!isComposingRef.current) {
@@ -1030,12 +1193,45 @@ function ImeTextarea({
     }
   }, [value]);
 
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || !onSizeChange || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      const borderBox = Array.isArray(entry.borderBoxSize)
+        ? entry.borderBoxSize[0]
+        : entry.borderBoxSize;
+      const width = Math.round(borderBox?.inlineSize ?? entry.contentRect.width);
+      const height = Math.round(borderBox?.blockSize ?? entry.contentRect.height);
+      if (!Number.isFinite(width) || !Number.isFinite(height)) return;
+
+      const nextSize = { width, height };
+      const lastSize = lastSizeRef.current;
+      lastSizeRef.current = nextSize;
+      if (!didObserveSizeRef.current) {
+        didObserveSizeRef.current = true;
+        return;
+      }
+      if (lastSize?.width === width && lastSize.height === height) return;
+
+      onSizeChange(nextSize);
+    });
+
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, [onSizeChange]);
+
   return (
     <textarea
+      ref={textareaRef}
       className={className}
       rows={rows}
       value={draft}
       placeholder={placeholder}
+      style={style}
       onCompositionStart={() => {
         isComposingRef.current = true;
       }}
