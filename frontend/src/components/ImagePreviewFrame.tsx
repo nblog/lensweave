@@ -28,6 +28,7 @@ export function ImagePreviewFrame({
   onUpload,
   onRetry,
   onFavorite,
+  favoriteActive = false,
   retryDisabled = false,
 }: {
   src?: string;
@@ -40,10 +41,14 @@ export function ImagePreviewFrame({
   onUpload?: (imageUri: string) => void;
   onRetry?: () => void;
   onFavorite?: () => void;
+  favoriteActive?: boolean;
   retryDisabled?: boolean;
 }) {
   const { t } = useTranslation();
   const confirm = useConfirm();
+  const favoriteLabel = favoriteActive
+    ? t("assets.generatedSaved")
+    : t("assets.addFromGenerated");
 
   const handleFile = async (file: File) => {
     if (!onUpload) return;
@@ -113,18 +118,23 @@ export function ImagePreviewFrame({
       )}
       {src && onFavorite && (
         <button
-          className="node-favorite nodrag"
+          className={`node-favorite nodrag${favoriteActive ? " active" : ""}`}
           type="button"
+          aria-pressed={favoriteActive}
           onPointerDown={(e) => e.stopPropagation()}
           onDoubleClick={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onFavorite();
           }}
-          title={t("assets.addFromGenerated")}
-          aria-label={t("assets.addFromGenerated")}
+          title={favoriteLabel}
+          aria-label={favoriteLabel}
         >
-          <Star size={14} aria-hidden />
+          <Star
+            size={14}
+            fill={favoriteActive ? "currentColor" : "none"}
+            aria-hidden
+          />
         </button>
       )}
       {onUpload && (

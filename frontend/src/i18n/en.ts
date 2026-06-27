@@ -84,6 +84,7 @@ const en = {
     uploadAssetIntro:
       "Upload an image, then set its kind, name, and scope so it can be referenced at that layer.",
     addFromGenerated: "Save asset",
+    generatedSaved: "Asset saved",
     addGeneratedTitle: "Save as asset",
     addGeneratedIntro:
       "Add a name and kind for this generated image. It saves to this project's assets by default, or you can switch to global or temporary assets.",

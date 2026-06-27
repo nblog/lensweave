@@ -79,6 +79,7 @@ const zh = {
     uploadGlobalAssetIntro: "上传一张可跨项目复用的图片，并补充类型、名称和描述。",
     uploadAssetIntro: "上传一张图片并补充类型、名称和资产范围，保存后会按当前范围被项目或分集引用。",
     addFromGenerated: "收藏资产",
+    generatedSaved: "已收藏资产",
     addGeneratedTitle: "保存为资产",
     addGeneratedIntro: "为这张生成图补充名称和类型；默认保存到当前项目资产，也可以切换为全局资产或临时资产。",
     saveGenerated: "保存到资产",

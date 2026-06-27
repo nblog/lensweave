@@ -699,6 +699,10 @@ export function CanvasWorkshop({
                     ? () => handleAddImageAsset(selected.id)
                     : undefined
                 }
+                favoriteActive={isGeneratedImageSaved(
+                  selected.data,
+                  assets.data ?? [],
+                )}
                 onRetry={() => handleGenerateImage(selected.id)}
                 retryDisabled={selectedIsRendering}
               />
@@ -992,6 +996,7 @@ function CanvasNodeCard({
                 ? () => node.onAddImageAsset(id)
                 : undefined
             }
+            favoriteActive={isGeneratedImageSaved(node, node.assets)}
             onRetry={
               node.kind === "image_gen"
                 ? () => node.onGenerateImage(id)
@@ -1399,6 +1404,18 @@ function imagePreviewUrl(data: NodeData, assets: Asset[] = []): string | undefin
   if (data.refId == null) return undefined;
   const imagePath = assets.find((asset) => asset.id === data.refId)?.image_path;
   return imagePath ? mediaUrl(imagePath) : undefined;
+}
+
+function isGeneratedImageSaved(
+  data: NodeData,
+  assets: Asset[] = [],
+): boolean {
+  if (data.kind !== "image_gen" || !data.imageUrl) return false;
+  const generatedImageUrl = mediaUrl(data.imageUrl);
+  return assets.some(
+    (asset) =>
+      asset.image_path != null && mediaUrl(asset.image_path) === generatedImageUrl,
+  );
 }
 
 function videoPreviewUrl(data: NodeData): string | undefined {

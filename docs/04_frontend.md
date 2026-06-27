@@ -123,7 +123,7 @@ src/i18n/
 
 ### 3.3 右侧节点编辑面板
 
-选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前 episode 可见资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖，并以同一套运行状态显示 job 状态、错误与产物预览。`TextNode` / `TextGenNode` 卡片内的文本编辑框允许在画布上横向和纵向放大，并设置最小宽度与受视口约束的上限，便于阅读较长 prompt 而不破坏整体画布可用性；用户拖拽后的节点尺寸写入 `CanvasNode.position.width` / `CanvasNode.position.height`，与 `position.x` / `position.y` 共同表达画布几何信息，随保存画布恢复。`ImageNode` 和 `ImageGenNode` 共用图像预览框，图片均通过双击打开完整预览；`ImageNode` 保留右上上传控件但不显示左下收藏，`ImageGenNode` 的左下收藏按钮打开"保存为资产"模态窗。该模态窗默认保存到当前项目资产，用户可切换为全局资产，并在项目资产下选择固定 / 临时。模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，节点几何信息写入 `CanvasNode.position`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
+选中节点 → 右侧编辑其参数：所有已支持的画布节点都可编辑通用节点标题；TextNode 额外编辑文本 / 绑定 segment；ImageNode 额外选择引用的当前 episode 可见资产、查看参考图；适配器节点额外查看 §3.2 的有序输入清单与生成参数覆盖，并以同一套运行状态显示 job 状态、错误与产物预览。`TextNode` / `TextGenNode` 卡片内的文本编辑框允许在画布上横向和纵向放大，并设置最小宽度与受视口约束的上限，便于阅读较长 prompt 而不破坏整体画布可用性；用户拖拽后的节点尺寸写入 `CanvasNode.position.width` / `CanvasNode.position.height`，与 `position.x` / `position.y` 共同表达画布几何信息，随保存画布恢复。`ImageNode` 和 `ImageGenNode` 共用图像预览框，图片均通过双击打开完整预览；`ImageNode` 保留右上上传控件但不显示左下收藏，`ImageGenNode` 的左下收藏按钮打开"保存为资产"模态窗；当当前生成图的 `imageUrl` 已存在于当前 episode 可见资产库时，该星标显示为蓝色实心。该模态窗默认保存到当前项目资产，用户可切换为全局资产，并在项目资产下选择固定 / 临时。模态窗必须显式取消 / 关闭 / 保存，点击遮罩不关闭，避免误丢填写内容。`VideoGenNode` 暴露 `视频时长（秒）` 与 `分辨率`；控件的默认值、范围和选项从后端 model catalog endpoint 读取，而该 endpoint 的真源是 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed YAML catalog view。编辑结果写入 `CanvasNode.data`，节点几何信息写入 `CanvasNode.position`，随画布持久化（`PUT /api/episodes/{id}/canvas`）。
 
 ### 3.4 前端即护栏：端口类型校验
 
@@ -144,7 +144,7 @@ src/i18n/
 
 ### 3.6 触发生成与播放
 
-适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点卡片上实时显示 `queued/running/succeeded` 状态、生成中 loading 覆盖层与已用时间，成功后产物回填到当前生成节点并可内嵌播放。图像生成产物可从节点卡片收藏为资产：默认提交 `POST /api/projects/{project_uid}/assets` 写入当前项目固定资产；选择临时资产时提交 `POST /api/episodes/{episode_id}/assets`；选择全局资产时提交 `POST /api/assets`。保存后刷新当前 episode 可见资产查询。任务结束后把最终耗时写入 `CanvasNode.data.generation_elapsed_ms`，刷新画布后仍能看到上次生成用时。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
+适配器节点上有触发按钮 → 调对应生成端点（如 VideoGen 节点 → `POST /api/episodes/{id}/video`），拿 `job_id` 后用 TanStack Query 轮询 `GET /api/jobs/{job_id}`（或订阅 SSE），节点卡片上实时显示 `queued/running/succeeded` 状态、生成中 loading 覆盖层与已用时间，成功后产物回填到当前生成节点并可内嵌播放。图像生成产物可从节点卡片收藏为资产：默认提交 `POST /api/projects/{project_uid}/assets` 写入当前项目固定资产；选择临时资产时提交 `POST /api/episodes/{episode_id}/assets`；选择全局资产时提交 `POST /api/assets`。保存后刷新当前 episode 可见资产查询，星标从可见资产库中是否存在同一 `image_path` 推导收藏状态；再次触发生成会清空旧 `imageUrl` 并让星标回到未收藏状态。任务结束后把最终耗时写入 `CanvasNode.data.generation_elapsed_ms`，刷新画布后仍能看到上次生成用时。未来逐段出片接入后，segment 定向视频任务仍可把 `clip_path` 写回对应 segment。
 
 ## 4. 状态管理
 
