@@ -47,7 +47,6 @@ import {
   BASE_URL,
   DEFAULT_GENERATION_CHANNEL,
   type Asset,
-  type AssetKind,
   type AssetScope,
   type GenerationChannel,
   type Job,
@@ -80,9 +79,13 @@ import {
 import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
 import {
   AssetSaveDialog,
-  ASSET_SCOPE_OPTIONS,
   type AssetSaveDialogValue,
 } from "../components/AssetSaveDialog";
+import {
+  ASSET_SCOPE_OPTIONS,
+  assetKindLabelSuffix,
+  assetScopeLabelSuffix,
+} from "../components/assetOptions";
 import {
   ImagePreviewDialog,
   type ImagePreviewState,
@@ -1509,28 +1512,6 @@ function canRenameNodeTitle(kind: NodeKind): boolean {
     kind === "image_gen" ||
     kind === "video_gen"
   );
-}
-
-function assetKindLabelSuffix(kind: AssetKind): string {
-  switch (kind) {
-    case "character":
-      return "Character";
-    case "scene":
-      return "Scene";
-    case "prop":
-      return "Prop";
-  }
-}
-
-function assetScopeLabelSuffix(scope: AssetScope): string {
-  switch (scope) {
-    case "global":
-      return "Global";
-    case "fixed":
-      return "Fixed";
-    case "temporary":
-      return "Temporary";
-  }
 }
 
 function readAssetScope(asset: Asset): AssetScope {

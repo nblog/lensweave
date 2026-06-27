@@ -5,16 +5,15 @@
  */
 import { useId, useState, type SyntheticEvent } from "react";
 import { useTranslation } from "react-i18next";
-import { Archive, Clock3, Globe2, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { AssetKind, AssetScope } from "../api/client";
+import { AssetFormFields } from "./AssetFormFields";
 import { ImagePreviewFrame } from "./ImagePreviewFrame";
 import {
   ImagePreviewDialog,
   type ImagePreviewState,
 } from "./ImagePreviewDialog";
-
-export const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "prop", "scene"];
-export const ASSET_SCOPE_OPTIONS: AssetScope[] = ["global", "fixed", "temporary"];
+import { assetScopeIcon, assetScopeLabelSuffix } from "./assetOptions";
 
 export type AssetScopeChoice = {
   scope: AssetScope;
@@ -172,49 +171,16 @@ export function AssetSaveDialog({
             </div>
           )}
 
-          <div className="asset-save-field-row">
-            <div className="asset-save-field asset-save-kind-field">
-              <label htmlFor={`${idPrefix}-kind`}>{t("assets.kind")}</label>
-              <select
-                id={`${idPrefix}-kind`}
-                value={kind}
-                onChange={(event) => setKind(event.target.value as AssetKind)}
-                disabled={isSaving}
-              >
-                {ASSET_KIND_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {t(`assets.kind${assetKindLabelSuffix(option)}`)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="asset-save-field">
-              <label htmlFor={`${idPrefix}-name`}>{t("assets.name")}</label>
-              <input
-                id={`${idPrefix}-name`}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={t("assets.namePlaceholder")}
-                disabled={isSaving}
-                autoFocus
-              />
-            </div>
-          </div>
-
-          <div className="asset-save-field">
-            <label htmlFor={`${idPrefix}-description`}>
-              {t("assets.description")}
-            </label>
-            <textarea
-              id={`${idPrefix}-description`}
-              rows={4}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-              placeholder={t("assets.descriptionPlaceholder")}
-              disabled={isSaving}
-            />
-          </div>
+          <AssetFormFields
+            idPrefix={idPrefix}
+            kind={kind}
+            name={name}
+            description={description}
+            disabled={isSaving}
+            onKindChange={setKind}
+            onNameChange={setName}
+            onDescriptionChange={setDescription}
+          />
 
           {error && <p className="error small">{error}</p>}
 
@@ -236,37 +202,4 @@ export function AssetSaveDialog({
       )}
     </div>
   );
-}
-
-export function assetScopeIcon(scope: AssetScope, size = 15) {
-  switch (scope) {
-    case "global":
-      return <Globe2 size={size} aria-hidden />;
-    case "fixed":
-      return <Archive size={size} aria-hidden />;
-    case "temporary":
-      return <Clock3 size={size} aria-hidden />;
-  }
-}
-
-function assetKindLabelSuffix(kind: AssetKind): string {
-  switch (kind) {
-    case "character":
-      return "Character";
-    case "scene":
-      return "Scene";
-    case "prop":
-      return "Prop";
-  }
-}
-
-function assetScopeLabelSuffix(scope: AssetScope): string {
-  switch (scope) {
-    case "global":
-      return "Global";
-    case "fixed":
-      return "Fixed";
-    case "temporary":
-      return "Temporary";
-  }
 }

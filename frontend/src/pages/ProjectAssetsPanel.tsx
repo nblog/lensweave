@@ -18,12 +18,12 @@ import {
   type AssetScope,
 } from "../api/client";
 import { AssetEditorDialog } from "../components/AssetEditorDialog";
+import { AssetSaveDialog } from "../components/AssetSaveDialog";
 import {
-  AssetSaveDialog,
   ASSET_KIND_OPTIONS,
   ASSET_SCOPE_OPTIONS,
   assetScopeIcon,
-} from "../components/AssetSaveDialog";
+} from "../components/assetOptions";
 
 type AssetFilter = "all" | AssetKind;
 

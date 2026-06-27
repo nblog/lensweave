@@ -85,7 +85,6 @@ const zh = {
     saveChanges: "保存修改",
     saving: "保存中…",
     deleting: "删除中…",
-    deleteImage: "删除图片",
     nameRequired: "请填写资产名称。",
     imageRequired: "请先上传资产图片。",
     episodeRequired: "请先选择一个分集，才能创建临时资产。",

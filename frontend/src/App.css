@@ -1658,10 +1658,6 @@ button.primary:disabled {
   box-shadow: 0 22px 60px rgba(15, 23, 42, 0.28);
 }
 
-.asset-editor-panel {
-  grid-template-columns: minmax(220px, 300px) minmax(300px, 420px);
-}
-
 .asset-save-close {
   position: absolute;
   top: 0.75rem;
@@ -1709,39 +1705,6 @@ button.primary:disabled {
 .asset-save-preview-frame .node-upload {
   top: 0.75rem;
   right: 0.75rem;
-}
-
-.asset-editor-preview-stack {
-  display: grid;
-  align-content: start;
-  gap: 0.65rem;
-  min-width: 0;
-}
-
-.asset-image-clear {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 2.15rem;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fff7f7;
-  color: #b42318;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.84rem;
-  font-weight: 800;
-}
-
-.asset-image-clear:hover:not(:disabled) {
-  border-color: #fca5a5;
-  background: #fee2e2;
-}
-
-.asset-image-clear:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .asset-save-body {

@@ -12,10 +12,8 @@ import {
 } from "lucide-react";
 import { api, BASE_URL, type Asset, type AssetKind } from "../api/client";
 import { AssetEditorDialog } from "../components/AssetEditorDialog";
-import {
-  AssetSaveDialog,
-  ASSET_KIND_OPTIONS,
-} from "../components/AssetSaveDialog";
+import { ASSET_KIND_OPTIONS } from "../components/assetOptions";
+import { AssetSaveDialog } from "../components/AssetSaveDialog";
 
 type AssetFilter = "all" | AssetKind;
 

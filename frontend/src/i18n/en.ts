@@ -91,7 +91,6 @@ const en = {
     saveChanges: "Save changes",
     saving: "Saving…",
     deleting: "Deleting…",
-    deleteImage: "Remove image",
     nameRequired: "Asset name is required.",
     imageRequired: "Upload an asset image first.",
     episodeRequired: "Select an episode before creating a temporary asset.",
