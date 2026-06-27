@@ -22,7 +22,7 @@ uv sync                              # 安装依赖（mock 渠道无需密钥）
 cp .env.example .env                 # 填入 ROUTIN_API_KEY（仅 routin 渠道需要）
 uv run ai-drama --help               # 查看 CLI
 uv run ai-drama seed-demo            # ★ 一键端到端：建项目→资产→分集→分镜→画布→出片(mock)
-uv run ai-drama serve                # 启动 FastAPI（默认 http://127.0.0.1:8770）
+uv run ai-drama serve                # 启动 FastAPI（默认 http://127.0.0.1:8080）
 ```
 
 `seed-demo` 用离线 mock 渠道在无网络、无密钥下跑通整条链路，输出一段占位 MP4 的路径——最快验证后端切片是否完整。真实出片把 `--channel routin` 传入（需先 `uv sync --extra routin` 并配好 `.env`）。
@@ -32,7 +32,7 @@ uv run ai-drama serve                # 启动 FastAPI（默认 http://127.0.0.1:
 ```bash
 cd frontend
 npm install
-npm run dev                          # 默认 http://localhost:5173
+npm run dev                          # 默认 http://localhost:3000
 ```
 
 打开浏览器：创建项目 → 打开项目（加人物 / 场景资产、建分集）→ 进入 EP 工坊。在工坊里：
@@ -45,7 +45,7 @@ npm run dev                          # 默认 http://localhost:5173
 
 > 画布会在交互层就阻止非法连线（资产节点只能连向内容 / 输出，输出节点是汇点，不成环）——这是前端"约束用户不越界"的第一道护栏，后端 schema 是最终防线。
 
-> **端口说明**：默认后端端口是 **8770** 而非常见的 8000。本机（Windows）的 TCP 端口 7992–8091 被系统保留（`netsh interface ipv4 show excludedportrange protocol=tcp` 可查），8000 无法绑定。如需改端口：后端 `uv run ai-drama serve --port <port>`，前端在 `frontend/.env` 设 `VITE_API_BASE_URL`。
+> **端口说明**：默认后端端口是 **8080**。如需改端口：后端 `uv run ai-drama serve --port <port>`，前端在 `frontend/.env` 设 `VITE_API_BASE_URL`。
 
 ## 测试
 

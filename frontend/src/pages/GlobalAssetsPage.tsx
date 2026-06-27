@@ -1,5 +1,5 @@
 /** Global asset library: reusable visual assets available to every project. */
-import { useMemo, useState, type SyntheticEvent } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -9,16 +9,18 @@ import {
   Package,
   Plus,
   Users,
-  X,
 } from "lucide-react";
 import { api, BASE_URL, type Asset, type AssetKind } from "../api/client";
 import { AssetEditorDialog } from "../components/AssetEditorDialog";
-import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
+import {
+  AssetSaveDialog,
+  ASSET_KIND_OPTIONS,
+} from "../components/AssetSaveDialog";
 
 type AssetFilter = "all" | AssetKind;
 
 const ASSET_FILTERS: AssetFilter[] = ["all", "character", "prop", "scene"];
-const ASSET_GROUPS: AssetKind[] = ["character", "prop", "scene"];
+const ASSET_GROUPS = ASSET_KIND_OPTIONS;
 
 export function GlobalAssetsPage() {
   const { t } = useTranslation();
@@ -55,7 +57,7 @@ export function GlobalAssetsPage() {
           onClick={() => setIsCreateOpen(true)}
         >
           <Plus size={15} aria-hidden />
-          {t("assets.uploadAsset")}
+          {t("assets.uploadGlobalAsset")}
         </button>
       </div>
 
@@ -101,7 +103,14 @@ export function GlobalAssetsPage() {
       </div>
 
       {isCreateOpen && (
-        <GlobalAssetCreateDialog
+        <AssetSaveDialog
+          defaultScope="global"
+          scopeChoices={[{ scope: "global" }]}
+          kicker={t("assets.scopeGlobal")}
+          title={t("assets.uploadGlobalAsset")}
+          intro={t("assets.uploadGlobalAssetIntro")}
+          ariaLabel={t("assets.uploadGlobalAsset")}
+          submitLabel={t("assets.saveGenerated")}
           onClose={() => setIsCreateOpen(false)}
           onSubmit={async (body) => {
             await api.createGlobalAsset(body);
@@ -196,139 +205,6 @@ function AssetGroup({
         ))}
       </ul>
     </section>
-  );
-}
-
-function GlobalAssetCreateDialog({
-  onClose,
-  onSubmit,
-}: {
-  onClose: () => void;
-  onSubmit: (body: {
-    kind: AssetKind;
-    name: string;
-    description: string | null;
-    spec: Record<string, unknown>;
-    image_path: string | null;
-  }) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [kind, setKind] = useState<AssetKind>("character");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleSubmit = async (
-    event: SyntheticEvent<HTMLFormElement, SubmitEvent>,
-  ) => {
-    event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError(t("assets.nameRequired"));
-      return;
-    }
-    if (!imageUri) {
-      setError(t("assets.imageRequired"));
-      return;
-    }
-    setIsSaving(true);
-    setError(null);
-    try {
-      await onSubmit({
-        kind,
-        name: trimmedName,
-        description: description.trim() || null,
-        spec: { asset_scope: "global" },
-        image_path: imageUri,
-      });
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : t("assets.saveError"),
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div
-      className="asset-save-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("assets.uploadAsset")}
-    >
-      <form className="asset-save-panel" onSubmit={handleSubmit}>
-        <button
-          className="asset-save-close"
-          type="button"
-          onClick={onClose}
-          aria-label={t("confirm.cancel")}
-          disabled={isSaving}
-        >
-          <X size={18} aria-hidden />
-        </button>
-
-        <ImagePreviewFrame
-          src={imageUri ?? undefined}
-          alt={name || t("assets.uploadAsset")}
-          className="asset-save-preview-frame"
-          onUpload={(uri) => setImageUri(uri)}
-        />
-
-        <div className="asset-save-body">
-          <span className="project-page-kicker">{t("assets.scopeGlobal")}</span>
-          <h3>{t("assets.uploadGlobalAsset")}</h3>
-          <p>{t("assets.uploadGlobalAssetIntro")}</p>
-
-          <label htmlFor="global-asset-kind">{t("assets.kind")}</label>
-          <select
-            id="global-asset-kind"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as AssetKind)}
-            disabled={isSaving}
-          >
-            {ASSET_GROUPS.map((option) => (
-              <option key={option} value={option}>
-                {t(`assets.kind${cap(option)}`)}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor="global-asset-name">{t("assets.name")}</label>
-          <input
-            id="global-asset-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("assets.namePlaceholder")}
-            disabled={isSaving}
-            autoFocus
-          />
-
-          <label htmlFor="global-asset-description">{t("assets.description")}</label>
-          <textarea
-            id="global-asset-description"
-            rows={4}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder={t("assets.descriptionPlaceholder")}
-            disabled={isSaving}
-          />
-
-          {error && <p className="error small">{error}</p>}
-
-          <div className="asset-save-actions">
-            <button type="button" onClick={onClose} disabled={isSaving}>
-              {t("confirm.cancel")}
-            </button>
-            <button className="primary" type="submit" disabled={isSaving}>
-              {isSaving ? t("assets.saving") : t("assets.saveGenerated")}
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
   );
 }
 

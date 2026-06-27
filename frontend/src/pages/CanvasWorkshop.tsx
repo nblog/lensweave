@@ -15,7 +15,6 @@ import {
   useRef,
   useState,
   type CSSProperties,
-  type SyntheticEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -32,10 +31,8 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  Archive,
   Boxes,
   Clapperboard,
-  Globe2,
   Image as ImageIcon,
   Loader2,
   RotateCw,
@@ -43,7 +40,6 @@ import {
   Sparkles,
   Timer,
   Type,
-  X,
 } from "lucide-react";
 
 import {
@@ -83,6 +79,11 @@ import {
 } from "../stores/canvasStore";
 import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
 import {
+  AssetSaveDialog,
+  ASSET_SCOPE_OPTIONS,
+  type AssetSaveDialogValue,
+} from "../components/AssetSaveDialog";
+import {
   ImagePreviewDialog,
   type ImagePreviewState,
 } from "../components/ImagePreviewDialog";
@@ -111,10 +112,7 @@ type GeneratedAssetDialogState = {
   previewSrc: string;
   suggestedName: string;
 };
-type GeneratedAssetTarget = "project" | "global";
-type ProjectGeneratedAssetScope = Extract<AssetScope, "fixed" | "temporary">;
 
-const ASSET_KIND_OPTIONS: AssetKind[] = ["character", "prop", "scene"];
 const GENERATION_CHANNEL_STORAGE_KEY = "ai-drama:generation-channel";
 const nodeTypes: NodeTypes = { canvasNode: CanvasNodeCard };
 type CanvasPosition = { x: number; y: number };
@@ -301,20 +299,12 @@ export function CanvasWorkshop({
   );
 
   const handleCreateGeneratedAsset = useCallback(
-    async (body: {
-      target: GeneratedAssetTarget;
-      scope: ProjectGeneratedAssetScope;
-      kind: AssetKind;
-      name: string;
-      description: string | null;
-      spec: Record<string, unknown>;
-      image_path: string;
-    }) => {
+    async (body: AssetSaveDialogValue) => {
       const spec = {
         ...body.spec,
-        asset_scope: body.target === "global" ? "global" : body.scope,
+        asset_scope: body.scope,
       };
-      if (body.target === "global") {
+      if (body.scope === "global") {
         await api.createGlobalAsset({
           kind: body.kind,
           name: body.name,
@@ -823,8 +813,17 @@ export function CanvasWorkshop({
         />
       )}
       {assetDialog && (
-        <GeneratedAssetDialog
-          draft={assetDialog}
+        <AssetSaveDialog
+          defaultScope="fixed"
+          scopeChoices={ASSET_SCOPE_OPTIONS.map((scope) => ({ scope }))}
+          initialName={assetDialog.suggestedName}
+          initialImageUri={assetDialog.imageUri}
+          initialPreviewSrc={assetDialog.previewSrc}
+          kicker={t("assets.addFromGenerated")}
+          title={t("assets.addGeneratedTitle")}
+          intro={t("assets.addGeneratedIntro")}
+          ariaLabel={t("assets.addGeneratedTitle")}
+          submitLabel={t("assets.saveGenerated")}
           onClose={() => setAssetDialog(null)}
           onSubmit={handleCreateGeneratedAsset}
         />
@@ -1388,205 +1387,6 @@ function ImageNodeEditor({
         previewTrigger="doubleClick"
         onUpload={(uri) => onChange(refId, node.data.label, uri)}
       />
-    </div>
-  );
-}
-
-function GeneratedAssetDialog({
-  draft,
-  onClose,
-  onSubmit,
-}: {
-  draft: GeneratedAssetDialogState;
-  onClose: () => void;
-  onSubmit: (body: {
-    target: GeneratedAssetTarget;
-    scope: ProjectGeneratedAssetScope;
-    kind: AssetKind;
-    name: string;
-    description: string | null;
-    spec: Record<string, unknown>;
-    image_path: string;
-  }) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [target, setTarget] = useState<GeneratedAssetTarget>("project");
-  const [scope, setScope] = useState<ProjectGeneratedAssetScope>("fixed");
-  const [kind, setKind] = useState<AssetKind>("character");
-  const [name, setName] = useState(draft.suggestedName);
-  const [description, setDescription] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleSubmit = async (
-    event: SyntheticEvent<HTMLFormElement, SubmitEvent>,
-  ) => {
-    event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError(t("assets.nameRequired"));
-      return;
-    }
-    setIsSaving(true);
-      setError(null);
-    try {
-      await onSubmit({
-        target,
-        scope,
-        kind,
-        name: trimmedName,
-        description: description.trim() || null,
-        spec: { asset_scope: target === "global" ? "global" : scope },
-        image_path: draft.imageUri,
-      });
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : t("assets.saveError"),
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div
-      className="asset-save-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("assets.addGeneratedTitle")}
-    >
-      <form className="asset-save-panel" onSubmit={handleSubmit}>
-        <button
-          className="asset-save-close"
-          type="button"
-          onClick={onClose}
-          aria-label={t("confirm.cancel")}
-          disabled={isSaving}
-        >
-          <X size={18} aria-hidden />
-        </button>
-
-        <div className="asset-save-preview">
-          <img src={draft.previewSrc} alt={draft.suggestedName} />
-        </div>
-
-        <div className="asset-save-body">
-          <span className="project-page-kicker">{t("assets.addFromGenerated")}</span>
-          <h3>{t("assets.addGeneratedTitle")}</h3>
-          <p>{t("assets.addGeneratedIntro")}</p>
-
-          <label>{t("assets.assetTarget")}</label>
-          <div className="asset-scope-options asset-target-options" role="group">
-            <button
-              type="button"
-              className={
-                target === "project"
-                  ? "asset-scope-option active"
-                  : "asset-scope-option"
-              }
-              onClick={() => setTarget("project")}
-              disabled={isSaving}
-            >
-              <Boxes size={14} aria-hidden />
-              {t("assets.targetProject")}
-            </button>
-            <button
-              type="button"
-              className={
-                target === "global"
-                  ? "asset-scope-option active"
-                  : "asset-scope-option"
-              }
-              onClick={() => setTarget("global")}
-              disabled={isSaving}
-            >
-              <Globe2 size={14} aria-hidden />
-              {t("assets.targetGlobal")}
-            </button>
-          </div>
-
-          {target === "project" && (
-            <>
-              <label>{t("assets.assetScope")}</label>
-              <div className="asset-scope-options asset-target-options" role="group">
-                <button
-                  type="button"
-                  className={
-                    scope === "fixed"
-                      ? "asset-scope-option active"
-                      : "asset-scope-option"
-                  }
-                  onClick={() => setScope("fixed")}
-                  disabled={isSaving}
-                >
-                  <Archive size={14} aria-hidden />
-                  {t("assets.scopeFixed")}
-                </button>
-                <button
-                  type="button"
-                  className={
-                    scope === "temporary"
-                      ? "asset-scope-option active"
-                      : "asset-scope-option"
-                  }
-                  onClick={() => setScope("temporary")}
-                  disabled={isSaving}
-                >
-                  <Timer size={14} aria-hidden />
-                  {t("assets.scopeTemporary")}
-                </button>
-              </div>
-            </>
-          )}
-
-          <label htmlFor={`asset-kind-${draft.nodeId}`}>{t("assets.kind")}</label>
-          <select
-            id={`asset-kind-${draft.nodeId}`}
-            value={kind}
-            onChange={(event) => setKind(event.target.value as AssetKind)}
-            disabled={isSaving}
-          >
-            {ASSET_KIND_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {t(`assets.kind${assetKindLabelSuffix(option)}`)}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor={`asset-name-${draft.nodeId}`}>{t("assets.name")}</label>
-          <input
-            id={`asset-name-${draft.nodeId}`}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("assets.namePlaceholder")}
-            disabled={isSaving}
-            autoFocus
-          />
-
-          <label htmlFor={`asset-description-${draft.nodeId}`}>
-            {t("assets.description")}
-          </label>
-          <textarea
-            id={`asset-description-${draft.nodeId}`}
-            rows={4}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder={t("assets.descriptionPlaceholder")}
-            disabled={isSaving}
-          />
-
-          {error && <p className="error small">{error}</p>}
-
-          <div className="asset-save-actions">
-            <button type="button" onClick={onClose} disabled={isSaving}>
-              {t("confirm.cancel")}
-            </button>
-            <button className="primary" type="submit" disabled={isSaving}>
-              {isSaving ? t("assets.saving") : t("assets.saveGenerated")}
-            </button>
-          </div>
-        </div>
-      </form>
     </div>
   );
 }

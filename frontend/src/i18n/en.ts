@@ -86,10 +86,7 @@ const en = {
     addFromGenerated: "Save asset",
     addGeneratedTitle: "Save as asset",
     addGeneratedIntro:
-      "Add a name and kind for this generated image. It saves to this project's assets by default, or you can switch to the global library.",
-    assetTarget: "Save location",
-    targetProject: "Project assets",
-    targetGlobal: "Global assets",
+      "Add a name and kind for this generated image. It saves to this project's assets by default, or you can switch to global or temporary assets.",
     saveGenerated: "Save to assets",
     saveChanges: "Save changes",
     saving: "Saving…",

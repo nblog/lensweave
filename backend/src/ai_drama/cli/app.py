@@ -173,7 +173,7 @@ def seed_demo(
 @app.command("serve")
 def serve(
     host: str = typer.Option("127.0.0.1", help="Bind host."),
-    port: int = typer.Option(8770, help="Bind port."),
+    port: int = typer.Option(8080, help="Bind port."),
     reload: bool = typer.Option(False, "--reload", help="Enable autoreload (dev)."),
 ) -> None:
     """Run the FastAPI server (uvicorn)."""

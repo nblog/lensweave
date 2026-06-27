@@ -1,29 +1,34 @@
 /** Project asset gallery: global / project fixed / episode temporary assets. */
-import { useMemo, useState, type SyntheticEvent } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Archive,
-  Clock3,
   Database,
-  Globe2,
   Image as ImageIcon,
   MapPin,
   Package,
   Plus,
   Users,
-  X,
 } from "lucide-react";
-import { api, type Asset, type AssetKind, type AssetScope } from "../api/client";
+import {
+  api,
+  BASE_URL,
+  type Asset,
+  type AssetKind,
+  type AssetScope,
+} from "../api/client";
 import { AssetEditorDialog } from "../components/AssetEditorDialog";
-import { ImagePreviewFrame } from "../components/ImagePreviewFrame";
-import { BASE_URL } from "../api/client";
+import {
+  AssetSaveDialog,
+  ASSET_KIND_OPTIONS,
+  ASSET_SCOPE_OPTIONS,
+  assetScopeIcon,
+} from "../components/AssetSaveDialog";
 
 type AssetFilter = "all" | AssetKind;
 
 const ASSET_FILTERS: AssetFilter[] = ["all", "character", "prop", "scene"];
-const ASSET_GROUPS: AssetKind[] = ["character", "prop", "scene"];
-const ASSET_SCOPE_OPTIONS: AssetScope[] = ["global", "fixed", "temporary"];
+const ASSET_GROUPS = ASSET_KIND_OPTIONS;
 
 export function ProjectAssetsPanel({
   projectUid,
@@ -92,7 +97,7 @@ export function ProjectAssetsPanel({
               onClick={() => setScope(option)}
               disabled={option === "temporary" && !episodeId}
             >
-              {scopeIcon(option)}
+              {assetScopeIcon(option)}
               {t(`assets.scopeTab${cap(option)}`, {
                 count: scopeCounts[option],
               })}
@@ -151,9 +156,17 @@ export function ProjectAssetsPanel({
       </div>
 
       {isCreateOpen && (
-        <AssetCreateDialog
-          defaultScope={activeScope}
-          episodeId={episodeId}
+        <AssetSaveDialog
+          defaultScope="fixed"
+          scopeChoices={ASSET_SCOPE_OPTIONS.map((scopeOption) => ({
+            scope: scopeOption,
+            disabled: scopeOption === "temporary" && !episodeId,
+          }))}
+          kicker={t("assets.assetScope")}
+          title={t("assets.uploadAsset")}
+          intro={t("assets.uploadAssetIntro")}
+          ariaLabel={t("assets.uploadAsset")}
+          submitLabel={t("assets.saveGenerated")}
           onClose={() => setIsCreateOpen(false)}
           onSubmit={async (body) => {
             if (body.scope === "global") {
@@ -279,170 +292,6 @@ function AssetGroup({
   );
 }
 
-function AssetCreateDialog({
-  defaultScope,
-  episodeId,
-  onClose,
-  onSubmit,
-}: {
-  defaultScope: AssetScope;
-  episodeId: number | null;
-  onClose: () => void;
-  onSubmit: (body: {
-    scope: AssetScope;
-    kind: AssetKind;
-    name: string;
-    description: string | null;
-    spec: Record<string, unknown>;
-    image_path: string | null;
-  }) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const [scope, setScope] = useState<AssetScope>(defaultScope);
-  const [kind, setKind] = useState<AssetKind>("character");
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [imageUri, setImageUri] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
-
-  const handleSubmit = async (
-    event: SyntheticEvent<HTMLFormElement, SubmitEvent>,
-  ) => {
-    event.preventDefault();
-    const trimmedName = name.trim();
-    if (!trimmedName) {
-      setError(t("assets.nameRequired"));
-      return;
-    }
-    if (scope === "temporary" && !episodeId) {
-      setError(t("assets.episodeRequired"));
-      return;
-    }
-    if (!imageUri) {
-      setError(t("assets.imageRequired"));
-      return;
-    }
-    setIsSaving(true);
-    setError(null);
-    try {
-      await onSubmit({
-        scope,
-        kind,
-        name: trimmedName,
-        description: description.trim() || null,
-        spec: { asset_scope: scope },
-        image_path: imageUri,
-      });
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error ? submitError.message : t("assets.saveError"),
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  return (
-    <div
-      className="asset-save-dialog"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("assets.uploadAsset")}
-    >
-      <form className="asset-save-panel" onSubmit={handleSubmit}>
-        <button
-          className="asset-save-close"
-          type="button"
-          onClick={onClose}
-          aria-label={t("confirm.cancel")}
-          disabled={isSaving}
-        >
-          <X size={18} aria-hidden />
-        </button>
-
-        <ImagePreviewFrame
-          src={imageUri ?? undefined}
-          alt={name || t("assets.uploadAsset")}
-          className="asset-save-preview-frame"
-          onUpload={(uri) => setImageUri(uri)}
-        />
-
-        <div className="asset-save-body">
-          <span className="project-page-kicker">{t("assets.assetScope")}</span>
-          <h3>{t("assets.uploadAsset")}</h3>
-          <p>{t("assets.uploadAssetIntro")}</p>
-
-          <label>{t("assets.assetScope")}</label>
-          <div className="asset-scope-options" role="group">
-            {ASSET_SCOPE_OPTIONS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={
-                  scope === option
-                    ? "asset-scope-option active"
-                    : "asset-scope-option"
-                }
-                onClick={() => setScope(option)}
-                disabled={isSaving || (option === "temporary" && !episodeId)}
-              >
-                {scopeIcon(option, 14)}
-                {t(`assets.scope${cap(option)}`)}
-              </button>
-            ))}
-          </div>
-
-          <label htmlFor="project-asset-kind">{t("assets.kind")}</label>
-          <select
-            id="project-asset-kind"
-            value={kind}
-            onChange={(event) => setKind(event.target.value as AssetKind)}
-            disabled={isSaving}
-          >
-            {ASSET_GROUPS.map((option) => (
-              <option key={option} value={option}>
-                {t(`assets.kind${cap(option)}`)}
-              </option>
-            ))}
-          </select>
-
-          <label htmlFor="project-asset-name">{t("assets.name")}</label>
-          <input
-            id="project-asset-name"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            placeholder={t("assets.namePlaceholder")}
-            disabled={isSaving}
-            autoFocus
-          />
-
-          <label htmlFor="project-asset-description">{t("assets.description")}</label>
-          <textarea
-            id="project-asset-description"
-            rows={4}
-            value={description}
-            onChange={(event) => setDescription(event.target.value)}
-            placeholder={t("assets.descriptionPlaceholder")}
-            disabled={isSaving}
-          />
-
-          {error && <p className="error small">{error}</p>}
-
-          <div className="asset-save-actions">
-            <button type="button" onClick={onClose} disabled={isSaving}>
-              {t("confirm.cancel")}
-            </button>
-            <button className="primary" type="submit" disabled={isSaving}>
-              {isSaving ? t("assets.saving") : t("assets.saveGenerated")}
-            </button>
-          </div>
-        </div>
-      </form>
-    </div>
-  );
-}
-
 function countByKind(assets: Asset[]): Record<AssetKind, number> {
   return assets.reduce<Record<AssetKind, number>>(
     (acc, asset) => {
@@ -481,17 +330,6 @@ function filterIcon(kind: AssetFilter) {
       return <MapPin size={15} aria-hidden />;
     case "prop":
       return <Package size={15} aria-hidden />;
-  }
-}
-
-function scopeIcon(scope: AssetScope, size = 15) {
-  switch (scope) {
-    case "global":
-      return <Globe2 size={size} aria-hidden />;
-    case "fixed":
-      return <Archive size={size} aria-hidden />;
-    case "temporary":
-      return <Clock3 size={size} aria-hidden />;
   }
 }
 

@@ -48,7 +48,7 @@ def test_local_backend_images_url_maps_to_generated_image_file(tmp_path, monkeyp
     image_path.write_bytes(_TINY_PNG)
 
     data_uri = routin._image_ref_to_url(
-        "http://127.0.0.1:8770/images/generated.png"
+        "http://127.0.0.1:8080/images/generated.png"
     )
 
     assert data_uri.startswith("data:image/png;base64,")
