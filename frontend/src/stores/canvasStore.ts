@@ -49,6 +49,7 @@ import {
   patchForJob,
   patchNodes,
   TERMINAL_JOB_STATUSES,
+  textNodeSizeProps,
   type CanvasNode,
   type NodeData,
 } from "../canvas/graph";
@@ -238,6 +239,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       x: PALETTE_FALLBACK_ORIGIN.x + nodes.length * PALETTE_FALLBACK_STEP.x,
       y: PALETTE_FALLBACK_ORIGIN.y + nodes.length * PALETTE_FALLBACK_STEP.y,
     };
+    const sizeProps = textNodeSizeProps(kind);
     set({
       nodeSeq: seq,
       nodes: [
@@ -245,6 +247,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
         {
           id,
           position: resolvePalettePosition(position ?? fallbackPosition, nodes),
+          ...sizeProps,
           data,
           type: "canvasNode",
         },
@@ -712,6 +715,7 @@ function applyUpsert(
     id: nodeId,
     position: { x: 0, y: 0 }, // relayout() assigns the real position
     type: "canvasNode",
+    ...textNodeSizeProps(kind),
     data: patch(baseData),
   };
   return { ...state, nodes: [...state.nodes, node] };

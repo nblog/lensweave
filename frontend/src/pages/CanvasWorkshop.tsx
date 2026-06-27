@@ -878,11 +878,9 @@ function CanvasNodeCard({
     const textarea = card?.querySelector<HTMLTextAreaElement>(".node-textarea");
     if (!card || !textarea) return;
 
-    const cardRect = card.getBoundingClientRect();
-    const textareaRect = textarea.getBoundingClientRect();
     const nextChrome = {
-      width: Math.max(0, Math.round(cardRect.width - textareaRect.width)),
-      height: Math.max(0, Math.round(cardRect.height - textareaRect.height)),
+      width: Math.max(0, card.offsetWidth - textarea.offsetWidth),
+      height: Math.max(0, card.offsetHeight - textarea.offsetHeight),
     };
     setTextNodeChrome((current) =>
       current.width === nextChrome.width && current.height === nextChrome.height

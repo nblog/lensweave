@@ -130,26 +130,12 @@ export function dtoToFlow(graph: CanvasGraphDTO): {
   return {
     nodes: graph.nodes.map((n) => {
       const position = readDtoPosition(n.position);
-      const size =
-        isTextLikeKind(n.kind) &&
-        position.width != null &&
-        position.height != null
-          ? clampTextNodeSize({
-              width: position.width,
-              height: position.height,
-            })
-          : null;
+      const sizeProps = textNodeSizeProps(n.kind, position);
       return {
         id: n.id,
         position: { x: position.x, y: position.y },
         type: "canvasNode",
-        ...(size
-          ? {
-              width: size.width,
-              height: size.height,
-              style: { width: size.width, height: size.height },
-            }
-          : {}),
+        ...sizeProps,
         data: {
           kind: n.kind,
           label: normalizeNodeLabel(n.name, n.kind),
@@ -240,6 +226,26 @@ function storedNodeSize(node: CanvasNode): { width: number; height: number } | n
 
 export function hasExplicitTextNodeSize(node: CanvasNode): boolean {
   return storedNodeSize(node) != null;
+}
+
+export function textNodeSizeProps(
+  kind: NodeKind,
+  size?: { width?: unknown; height?: unknown },
+): Partial<Pick<CanvasNode, "width" | "height" | "style">> {
+  if (!isTextLikeKind(kind)) {
+    return {};
+  }
+  const width = readNumber(size?.width);
+  const height = readNumber(size?.height);
+  const nextSize =
+    width != null && height != null && width > 0 && height > 0
+      ? clampTextNodeSize({ width, height })
+      : { ...TEXT_NODE_MIN_SIZE };
+  return {
+    width: nextSize.width,
+    height: nextSize.height,
+    style: { width: nextSize.width, height: nextSize.height },
+  };
 }
 
 function isTextLikeKind(kind: NodeKind): boolean {
