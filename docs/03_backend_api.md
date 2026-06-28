@@ -91,12 +91,12 @@ POST   /api/episodes/{id}/canvas/compile  编译画布 → VideoGenRequest 预�
 POST   /api/episodes/{id}/video           提交 VideoGen 节点视频生成 → job_id
 
 GET    /api/model-catalog/seedance/video-settings
-                                          读取 VideoGenNode 时长/分辨率控件配置
+                                          读取 VideoGenNode 时长/画面比例/分辨率控件配置
 ```
 
 > **自动 / 手动分集**：`POST /episodes` 接受两种模式。`mode=auto` 时后端用 02 的 EpisodeMap 自动切分（一行一集）；`mode=manual` 时前端传入用户划定的集边界。两者最终都落成 `Episode` 行，差异只在"谁决定边界"。
 
-> **模型参数配置**：`/model-catalog/.../video-settings` 不从 service 模块常量拼装，而是读取 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed catalog view；前端和 `CanvasGraph → VideoGenRequest` 编译器共享同一份默认值、范围和选项。
+> **模型参数配置**：`/model-catalog/.../video-settings` 不从 service 模块常量拼装，而是读取 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed catalog view；前端和 `CanvasGraph → VideoGenRequest` 编译器共享同一份时长、画面比例、分辨率的默认值、范围和选项。
 
 ### 3.4 生成任务（异步核心）
 

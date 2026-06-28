@@ -128,7 +128,7 @@ class VideoAdapter(ABC):
     async def poll(self, provider_task_id: str) -> VideoPollResult: ...
 ```
 
-> `ImageGenRequest.ordered_content` / `VideoGenRequest.ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影，也是图像/视频请求里唯一的多模态上下文来源：它保留 text/image 混合顺序，分别投影为 agent-framework 的 `Message.contents` 与 Ark 的 content array。`VideoGenRequest._slots_exclusive` 把 videogen 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽的核心机制），首尾帧槽保留给未来可能的其他渠道。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
+> `ImageGenRequest.ordered_content` / `VideoGenRequest.ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影，也是图像/视频请求里唯一的多模态上下文来源：它保留 text/image 混合顺序，分别投影为 agent-framework 的 `Message.contents` 与 Ark 的 content array。`VideoGenRequest._slots_exclusive` 把 videogen 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽的核心机制），首尾帧槽保留给未来可能的其他渠道。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `ratio` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
 
 ## 3. routin 实现（`src/ai_drama/adapters/routin/`）
 

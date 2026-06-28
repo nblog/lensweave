@@ -149,8 +149,14 @@ export interface VideoResolutionSettings {
   default: string;
 }
 
+export interface VideoRatioSettings {
+  options: string[];
+  default: string;
+}
+
 export interface VideoGenSettings {
   duration: VideoDurationSettings;
+  ratio: VideoRatioSettings;
   resolution: VideoResolutionSettings;
 }
 

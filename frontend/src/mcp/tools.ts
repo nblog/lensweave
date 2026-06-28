@@ -113,7 +113,9 @@ export async function drama_build_shot_video_graph(params: {
   }>;
   /** video duration in seconds; defaults to the model catalog default */
   duration?: number;
-  /** video resolution, e.g. "480p"; defaults to the catalog default */
+  /** video aspect ratio, e.g. "9:16"; defaults to the catalog default */
+  ratio?: string;
+  /** video resolution, e.g. "720p"; defaults to the catalog default */
   resolution?: string;
 }): Promise<{
   ok: boolean;
@@ -132,6 +134,7 @@ export async function drama_build_shot_video_graph(params: {
     prompt: params.prompt,
     assetRefs: params.assetRefs,
     duration: params.duration,
+    ratio: params.ratio,
     resolution: params.resolution,
     label: params.label,
   };
@@ -280,7 +283,7 @@ export async function drama_upsert_image_node(params: {
 
 /**
  * Create or update an adapter (generation) node by stable id: text_gen,
- * image_gen or video_gen. For video_gen, optionally set duration/resolution.
+ * image_gen or video_gen. For video_gen, optionally set duration/ratio/resolution.
  * Re-calling with the same nodeId updates in place.
  */
 export async function drama_upsert_adapter_node(params: {
@@ -294,7 +297,9 @@ export async function drama_upsert_adapter_node(params: {
   label?: string;
   /** video_gen only: duration in seconds */
   duration?: number;
-  /** video_gen only: resolution, e.g. "480p" */
+  /** video_gen only: aspect ratio, e.g. "9:16" */
+  ratio?: string;
+  /** video_gen only: resolution, e.g. "720p" */
   resolution?: string;
 }): Promise<{ ok: boolean; nodeId: string }> {
   const err = requireEpisode(params.episodeId);
@@ -304,6 +309,7 @@ export async function drama_upsert_adapter_node(params: {
     kind: params.kind,
     label: params.label,
     duration: params.duration,
+    ratio: params.ratio,
     resolution: params.resolution,
   });
   if (!r.ok) throw new Error(r.error);
@@ -332,7 +338,7 @@ export async function drama_connect_nodes(params: {
 }
 
 /**
- * Set a video_gen node's duration and/or resolution (validated against the
+ * Set a video_gen node's duration, ratio and/or resolution (validated against the
  * model catalog bounds).
  */
 export async function drama_set_video_params(params: {
@@ -342,13 +348,16 @@ export async function drama_set_video_params(params: {
   nodeId: string;
   /** duration in seconds */
   duration?: number;
-  /** resolution, e.g. "480p" */
+  /** aspect ratio, e.g. "9:16" */
+  ratio?: string;
+  /** resolution, e.g. "720p" */
   resolution?: string;
 }): Promise<{ ok: boolean }> {
   const err = requireEpisode(params.episodeId);
   if (err) throw new Error(err);
   const r = store().setVideoParams(params.nodeId, {
     duration: params.duration,
+    ratio: params.ratio,
     resolution: params.resolution,
   });
   if (!r.ok) throw new Error(r.error);

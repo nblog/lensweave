@@ -85,6 +85,7 @@ schema 抽取是**逆向追踪**：构建插件扫描 `registerGlobalTools()` / 
     order?: number;        // 接入次序；省略则按数组顺序
   }>;
   duration?: number;       // 省略走 catalog 默认（ADR-007）
+  ratio?: string;          // 省略走 catalog 默认
   resolution?: string;     // 省略走 catalog 默认
   channel?: 'mock' | 'routin';  // 仅 run_* 用；build 不渲染
 }
@@ -102,7 +103,7 @@ schema 抽取是**逆向追踪**：构建插件扫描 `registerGlobalTools()` / 
 | `drama_upsert_image_node` | | 按稳定 id 新建/更新图像节点（绑定资产 `assetId`/`assetName`，或上游产物） |
 | `drama_upsert_adapter_node` | | 按稳定 id 新建/更新适配器节点（text_gen/image_gen/video_gen） |
 | `drama_connect_nodes` | | 连接两节点，按端口类型校验，自动分配/追加 `order` |
-| `drama_set_video_params` | | 设置 video_gen 的时长/分辨率（catalog 边界校验） |
+| `drama_set_video_params` | | 设置 video_gen 的时长/画面比例/分辨率（catalog 边界校验） |
 | `drama_delete_node` | | 删除节点（AI 纠错路径，不只靠 upsert） |
 | `drama_run_text_node` | | save-then-submit 文本生成，轮询到终态 |
 | `drama_run_image_node` | | save-then-submit 图像生成，轮询到终态 |

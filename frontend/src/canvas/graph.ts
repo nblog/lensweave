@@ -29,6 +29,7 @@ export type NodeData = {
   videoUrl?: string;
   clipPath?: string | null;
   videoDuration?: number;
+  videoRatio?: string;
   videoResolution?: string;
   jobId?: string;
   jobStatus?: Job["status"];
@@ -145,6 +146,7 @@ export function dtoToFlow(graph: CanvasGraphDTO): {
           videoUrl: readString(n.data?.video_url),
           clipPath: readString(n.data?.clip_path) ?? null,
           videoDuration: readVideoDuration(n.data?.duration),
+          videoRatio: readVideoRatio(n.data?.ratio),
           videoResolution: readVideoResolution(n.data?.resolution),
           jobId: readString(n.data?.job_id),
           jobStatus: readJobStatus(n.data?.job_status),
@@ -181,8 +183,10 @@ export function nodeDataToPayload(
   if (data.clipPath) payload.clip_path = data.clipPath;
   if (data.kind === "video_gen") {
     const duration = data.videoDuration ?? videoSettings?.duration.default;
+    const ratio = data.videoRatio ?? videoSettings?.ratio.default;
     const resolution = data.videoResolution ?? videoSettings?.resolution.default;
     if (duration != null) payload.duration = duration;
+    if (ratio) payload.ratio = ratio;
     if (resolution) payload.resolution = resolution;
   }
   if (data.jobId) payload.job_id = data.jobId;
@@ -391,8 +395,19 @@ export function normalizeVideoResolution(
     : settings.resolution.default;
 }
 
+export function normalizeVideoRatio(
+  value: string,
+  settings: VideoGenSettings,
+): string {
+  return settings.ratio.options.includes(value) ? value : settings.ratio.default;
+}
+
 export function readVideoDuration(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+export function readVideoRatio(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
 }
 
 export function readVideoResolution(value: unknown): string | undefined {

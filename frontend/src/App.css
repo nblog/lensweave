@@ -1556,30 +1556,17 @@ button.primary:disabled {
   resize: vertical;
 }
 
+.content-editor textarea.inspector-textarea {
+  min-height: 10.5rem;
+  max-height: min(28rem, 58vh);
+}
+
 .node-title-editor {
   margin-bottom: 0.75rem;
 }
 
 .video-gen-settings {
   margin-bottom: 0.65rem;
-}
-
-.text-preview {
-  max-height: 220px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  margin: 0;
-  padding: 0.65rem;
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: #fff;
-  color: var(--color-text);
-  font: inherit;
-}
-
-.inspector-text-preview {
-  margin-top: 0.65rem;
 }
 
 .block {

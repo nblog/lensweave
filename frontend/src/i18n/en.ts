@@ -146,6 +146,7 @@ const en = {
     hint: "Drop data nodes (text/image) and adapter nodes (text/image/video gen). Connect inputs into an adapter node; input order = context order. Then Render on a Video gen node.",
     pickSegment: "Bind to segment",
     videoDuration: "Video duration (sec)",
+    videoRatio: "Aspect ratio",
     videoResolution: "Resolution",
     pickAsset: "Reference asset",
     noBinding: "No binding",

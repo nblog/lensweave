@@ -17,6 +17,8 @@ def test_seedance_video_settings_are_loaded_from_catalog() -> None:
     assert settings.duration.max == 15
     assert settings.duration.step == 1
     assert settings.duration.default == 15
+    assert settings.ratio.options == ["9:16", "16:9", "1:1"]
+    assert settings.ratio.default == "9:16"
     assert settings.resolution.options == ["480p", "720p", "1080p"]
     assert settings.resolution.default == "720p"
 
@@ -27,6 +29,10 @@ def test_seedance_video_settings_api(client) -> None:
     assert resp.status_code == 200
     assert resp.json() == {
         "duration": {"min": 4, "max": 15, "step": 1, "default": 15},
+        "ratio": {
+            "options": ["9:16", "16:9", "1:1"],
+            "default": "9:16",
+        },
         "resolution": {
             "options": ["480p", "720p", "1080p"],
             "default": "720p",

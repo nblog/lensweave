@@ -44,6 +44,7 @@ import {
   formatCanvasTimestamp,
   isAdapterKind,
   normalizeVideoDuration,
+  normalizeVideoRatio,
   normalizeVideoResolution,
   patchForGenerationError,
   patchForJob,
@@ -90,6 +91,7 @@ export type BuildShotInput = {
   prompt: string;
   assetRefs?: ShotAssetRef[];
   duration?: number;
+  ratio?: string;
   resolution?: string;
   label?: string;
 };
@@ -157,12 +159,13 @@ type CanvasState = {
     kind: Extract<NodeKind, "text_gen" | "image_gen" | "video_gen">;
     label?: string;
     duration?: number;
+    ratio?: string;
     resolution?: string;
   }) => CommandResult;
   connectNodes: (sourceId: string, targetId: string) => CommandResult;
   setVideoParams: (
     nodeId: string,
-    params: { duration?: number; resolution?: string },
+    params: { duration?: number; ratio?: string; resolution?: string },
   ) => CommandResult;
   deleteNode: (nodeId: string) => CommandResult;
   buildShotVideoGraph: (input: BuildShotInput) => CommandResult<{
@@ -232,6 +235,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       ...(kind === "video_gen"
         ? {
             videoDuration: videoSettings?.duration.default,
+            videoRatio: videoSettings?.ratio.default,
             videoResolution: videoSettings?.resolution.default,
           }
         : {}),
@@ -402,7 +406,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return { ok: true };
   },
 
-  upsertAdapterNode: ({ nodeId, kind, label, duration, resolution }) => {
+  upsertAdapterNode: ({ nodeId, kind, label, duration, ratio, resolution }) => {
     if (!nodeId) return { ok: false, error: "nodeId is required" };
     if (!isAdapterKind(kind)) {
       return { ok: false, error: `${kind} is not an adapter node kind` };
@@ -417,6 +421,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
               duration != null && videoSettings
                 ? normalizeVideoDuration(duration, videoSettings)
                 : (data.videoDuration ?? videoSettings?.duration.default),
+            videoRatio:
+              ratio != null && videoSettings
+                ? normalizeVideoRatio(ratio, videoSettings)
+                : (data.videoRatio ?? videoSettings?.ratio.default),
             videoResolution:
               resolution != null && videoSettings
                 ? normalizeVideoResolution(resolution, videoSettings)
@@ -466,7 +474,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
     return { ok: true };
   },
 
-  setVideoParams: (nodeId, { duration, resolution }) => {
+  setVideoParams: (nodeId, { duration, ratio, resolution }) => {
     const { nodes, videoSettings } = get();
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return { ok: false, error: `node not found: ${nodeId}` };
@@ -477,6 +485,9 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
       nodes: patchNodes(s.nodes, nodeId, {
         ...(duration != null && videoSettings
           ? { videoDuration: normalizeVideoDuration(duration, videoSettings) }
+          : {}),
+        ...(ratio != null && videoSettings
+          ? { videoRatio: normalizeVideoRatio(ratio, videoSettings) }
           : {}),
         ...(resolution != null && videoSettings
           ? {
@@ -507,7 +518,8 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
   },
 
   buildShotVideoGraph: (input) => {
-    const { shotId, prompt, assetRefs = [], duration, resolution, label } = input;
+    const { shotId, prompt, assetRefs = [], duration, ratio, resolution, label } =
+      input;
     if (!shotId) return { ok: false, error: "shotId is required" };
     if (!prompt?.trim()) {
       // video_gen needs a non-empty text input to render (docs/06 §3.1).
@@ -534,6 +546,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
           duration != null && videoSettings
             ? normalizeVideoDuration(duration, videoSettings)
             : (data.videoDuration ?? videoSettings?.duration.default),
+        videoRatio:
+          ratio != null && videoSettings
+            ? normalizeVideoRatio(ratio, videoSettings)
+            : (data.videoRatio ?? videoSettings?.ratio.default),
         videoResolution:
           resolution != null && videoSettings
             ? normalizeVideoResolution(resolution, videoSettings)

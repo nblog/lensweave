@@ -64,6 +64,7 @@ import {
   isActiveJobStatus,
   NODE_OUTPUT,
   normalizeVideoDuration,
+  normalizeVideoRatio,
   normalizeVideoResolution,
   patchNodes,
   TEXT_NODE_MIN_SIZE,
@@ -683,6 +684,16 @@ export function CanvasWorkshop({
 
           {selected?.data.kind === "text_gen" && (
             <>
+              <div className="content-editor text-gen-output-editor">
+                <label>{t("canvas.textValue")}</label>
+                <ImeTextarea
+                  className="inspector-textarea"
+                  rows={8}
+                  value={selected.data.text ?? ""}
+                  placeholder={t("canvas.textValue")}
+                  onChange={(text) => updateNode(setNodes, selected.id, { text })}
+                />
+              </div>
               <hr />
               <button
                 className="primary block"
@@ -694,11 +705,6 @@ export function CanvasWorkshop({
                   : t("canvas.generateText")}
               </button>
               <AdapterInspectorRunState node={selected.data} nowMs={elapsedNow} />
-              {selected.data.text && (
-                <pre className="text-preview inspector-text-preview">
-                  {selected.data.text}
-                </pre>
-              )}
             </>
           )}
 
@@ -765,6 +771,33 @@ export function CanvasWorkshop({
                     })
                   }
                 />
+                <label htmlFor={`video-ratio-${selected.id}`}>
+                  {t("canvas.videoRatio")}
+                </label>
+                <select
+                  id={`video-ratio-${selected.id}`}
+                  value={
+                    selected.data.videoRatio ??
+                    videoSettings.data?.ratio.default ??
+                    ""
+                  }
+                  disabled={!videoSettings.data}
+                  onChange={(e) =>
+                    videoSettings.data &&
+                    updateNode(setNodes, selected.id, {
+                      videoRatio: normalizeVideoRatio(
+                        e.target.value,
+                        videoSettings.data,
+                      ),
+                    })
+                  }
+                >
+                  {(videoSettings.data?.ratio.options ?? []).map((ratio) => (
+                    <option key={ratio} value={ratio}>
+                      {ratio}
+                    </option>
+                  ))}
+                </select>
                 <label htmlFor={`video-resolution-${selected.id}`}>
                   {t("canvas.videoResolution")}
                 </label>
@@ -1360,7 +1393,8 @@ function TextNodeEditor({
       )}
       <label>{t("canvas.textValue")}</label>
       <ImeTextarea
-        rows={5}
+        className="inspector-textarea"
+        rows={8}
         value={text}
         onChange={(value) => onChange(refId, value, node.data.label)}
       />

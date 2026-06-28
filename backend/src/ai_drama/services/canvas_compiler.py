@@ -90,6 +90,14 @@ def _video_resolution_from_node(data: dict, settings: VideoGenSettings) -> str:
     return value
 
 
+def _video_ratio_from_node(data: dict, settings: VideoGenSettings) -> str:
+    value = data.get("ratio") or settings.ratio.default
+    if not isinstance(value, str) or value not in settings.ratio.options:
+        options = ", ".join(settings.ratio.options)
+        raise CompileError(f"video_gen ratio must be one of: {options}")
+    return value
+
+
 def compile_text_request(
     graph: CanvasGraph,
     *,
@@ -223,5 +231,6 @@ def compile_video_request(
     return VideoGenRequest(
         ordered_content=ordered_content,
         duration=_video_duration_from_node(data, settings),
+        ratio=_video_ratio_from_node(data, settings),
         resolution=_video_resolution_from_node(data, settings),
     )

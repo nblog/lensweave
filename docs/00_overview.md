@@ -160,9 +160,9 @@ ai-drama-flow/
 
 ### ADR-007 · 模型参数约束以 catalog YAML 为真源，运行时只消费 Pydantic 视图
 
-**决策**：视频生成这类模型参数（如 `duration.min/max/default`、`resolution.options/default`）不在 service、adapter 或前端模块里重复硬编码。它们以 `backend/src/ai_drama/config/model_catalog/*.yaml` 为业务真源；运行时代码通过一个窄 Pydantic typed view 读取需要的字段，再把该 typed view 暴露给 compiler/API/frontend。
+**决策**：视频生成这类模型参数（如 `duration.min/max/default`、`ratio.options/default`、`resolution.options/default`）不在 service、adapter 或前端模块里重复硬编码。它们以 `backend/src/ai_drama/config/model_catalog/*.yaml` 为业务真源；运行时代码通过一个窄 Pydantic typed view 读取需要的字段，再把该 typed view 暴露给 compiler/API/frontend。
 
-**背景**：`VideoGenNode` 的时长和分辨率既影响前端控件，也影响后端 `CanvasGraph → VideoGenRequest` 编译。如果每个模块各自保存 `15 / 4 / 15 / 720p / 480p...`，默认值与可选项会很快漂移。项目本身已经把 pydantic 作为"schema 即约束"的基础，因此 catalog 不能退化成到处传递的弱 `dict`。
+**背景**：`VideoGenNode` 的时长、画面比例和分辨率既影响前端控件，也影响后端 `CanvasGraph → VideoGenRequest` 编译。如果每个模块各自保存 `15 / 4 / 15 / 9:16 / 720p...`，默认值与可选项会很快漂移。项目本身已经把 pydantic 作为"schema 即约束"的基础，因此 catalog 不能退化成到处传递的弱 `dict`。
 
 **权衡**：只声明当前运行时消费的 YAML 子结构，而不是为整个 catalog 建一个庞大全量 schema。Pydantic model 使用 `extra="ignore"` 接纳未消费字段；这让 YAML 可以继续承载模型展示、provider、credential、prompt 等信息，同时保证业务代码读取到的是命名字段和校验后的默认/边界值。
 

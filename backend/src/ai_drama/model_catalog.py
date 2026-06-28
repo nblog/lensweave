@@ -59,10 +59,28 @@ class ResolutionSettings(BaseModel):
         return self
 
 
+class RatioSettings(BaseModel):
+    """Aspect-ratio options consumed by VideoGenNode and request compiler."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    options: list[str] = Field(min_length=1)
+    default: str
+
+    @model_validator(mode="after")
+    def _default_is_supported(self) -> "RatioSettings":
+        if len(set(self.options)) != len(self.options):
+            raise ValueError("ratio options must be unique")
+        if self.default not in self.options:
+            raise ValueError("ratio default must be one of options")
+        return self
+
+
 class VideoGenSettings(BaseModel):
     """Typed generation settings exposed to compiler and frontend."""
 
     duration: DurationSettings
+    ratio: RatioSettings
     resolution: ResolutionSettings
 
 
@@ -71,6 +89,7 @@ class _VideoModeParams(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
+    ratio: RatioSettings
     resolution: ResolutionSettings
 
 
@@ -85,6 +104,7 @@ class _VideoMode(BaseModel):
     def to_settings(self) -> VideoGenSettings:
         return VideoGenSettings(
             duration=self.duration,
+            ratio=self.params.ratio,
             resolution=self.params.resolution,
         )
 

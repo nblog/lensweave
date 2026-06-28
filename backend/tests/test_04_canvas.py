@@ -53,6 +53,7 @@ def test_compile_orders_images_by_edge_order():
         item.image.ref for item in req.ordered_content if item.image is not None
     ] == ["char.png", "scene.png"]
     assert req.duration == 15
+    assert req.ratio == "9:16"
     assert req.resolution == "720p"
 
 
@@ -155,11 +156,12 @@ def test_compile_image_request_preserves_mixed_multimodal_input_order():
 
 def test_compile_uses_video_gen_node_settings():
     g = _graph()
-    g.nodes[-1].data = {"duration": 12, "resolution": "1080p"}
+    g.nodes[-1].data = {"duration": 12, "ratio": "16:9", "resolution": "1080p"}
 
     req = compile_video_request(g, output_node_id="vg", resolve_asset_image=_image_for)
 
     assert req.duration == 12
+    assert req.ratio == "16:9"
     assert req.resolution == "1080p"
 
 
@@ -168,6 +170,14 @@ def test_compile_rejects_video_gen_duration_out_of_range():
     g.nodes[-1].data = {"duration": 16}
 
     with pytest.raises(CompileError, match="between 4 and 15"):
+        compile_video_request(g, output_node_id="vg", resolve_asset_image=_image_for)
+
+
+def test_compile_rejects_video_gen_ratio_out_of_catalog():
+    g = _graph()
+    g.nodes[-1].data = {"ratio": "4:3"}
+
+    with pytest.raises(CompileError, match="ratio must be one of"):
         compile_video_request(g, output_node_id="vg", resolve_asset_image=_image_for)
 
 
