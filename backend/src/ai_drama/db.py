@@ -128,7 +128,7 @@ class Episode(Base):
 
 
 class Segment(Base):
-    """A ≤15s shot fragment; the pipeline's minimal unit (test/instructions/06).
+    """A shot fragment; the pipeline's minimal unit (test/instructions/06).
 
     Stored as its own table because it is referenced by canvas nodes via
     ``ref_id``, carries the 07 panel and 08 clip paths, and is the target of an
