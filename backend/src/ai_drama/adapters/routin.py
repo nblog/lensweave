@@ -13,10 +13,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import mimetypes
 from pathlib import Path
-from typing import Iterable, Iterator
-from urllib.parse import unquote, urlparse
+from typing import Any, Iterable, Iterator, Mapping
+from urllib.parse import quote, unquote, urlparse
+
+import httpx
 
 from ai_drama.adapters.base import (
     ImageAdapter,
@@ -33,14 +36,11 @@ from ai_drama.adapters.base import (
 )
 from ai_drama.config import GENERATED_IMAGES_DIR, get_settings
 
-_TERMINAL = {"succeeded", "failed", "canceled"}
-_LOCAL_STATIC_HOSTS = {"localhost", "127.0.0.1", "::1"}
-
 
 def _static_image_path(ref: str) -> Path | None:
     """Map the backend's public ``/images/...`` URL back to its stored file."""
     parsed = urlparse(ref)
-    if parsed.scheme and parsed.hostname not in _LOCAL_STATIC_HOSTS:
+    if parsed.scheme and parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
         return None
     image_path = unquote(parsed.path)
     if not image_path.startswith("/images/"):
@@ -333,7 +333,7 @@ class RoutinVideoAdapter(VideoAdapter):
             self._client.content_generation.tasks.get, task_id=provider_task_id
         )
         status = getattr(result, "status", None) or "unknown"
-        if status not in _TERMINAL:
+        if status not in {"succeeded", "failed", "canceled"}:
             return VideoPollResult(status=status)
         if status == "succeeded":
             content = getattr(result, "content", None)
@@ -342,3 +342,178 @@ class RoutinVideoAdapter(VideoAdapter):
         err = getattr(result, "error", None)
         message = getattr(err, "message", None) if err else None
         return VideoPollResult(status=status, error=message)
+
+
+class RoutinVideoAdapter2(VideoAdapter):
+    """Temporary routin xAI-compatible video adapter based on xAI."""
+
+    def __init__(self) -> None:
+        self._base_url = "https://api.routin.ai/xai/v1"
+        self._api_key = _require_api_key()
+        self._default_model = "grok-imagine-video"
+        self._request_timeout = 360.0
+
+    @staticmethod
+    def _build_payload(req: VideoGenRequest, *, model: str) -> dict[str, Any]:
+        prompt_parts: list[str] = []
+        image_url: str | None = None
+        reference_image_urls: list[str] = []
+
+        for item in req.ordered_content:
+            if item.type == MultimodalContentType.TEXT and item.text:
+                prompt_parts.append(item.text)
+                continue
+            if item.image is None:
+                continue
+
+            url = _image_ref_to_url(item.image.ref)
+            if item.image.kind.value == "reference_image":
+                reference_image_urls.append(url)
+            elif item.image.kind.value == "first_frame":
+                if image_url is not None:
+                    raise ValueError(
+                        "xAI video request accepts only one first_frame image"
+                    )
+                image_url = url
+            else:
+                raise ValueError("xAI video request does not support last_frame images")
+
+        if image_url is not None and reference_image_urls:
+            raise ValueError(
+                "xAI video request cannot mix first_frame and reference images"
+            )
+        if len(reference_image_urls) > 7:
+            raise ValueError(
+                "xAI video request accepts at most 7 reference images, "
+                f"got {len(reference_image_urls)}"
+            )
+        if reference_image_urls and req.duration is not None and req.duration > 10:
+            raise ValueError(
+                "xAI video request duration must be <= 10 when reference images are used"
+            )
+
+        prompt = "\n".join(prompt_parts).strip()
+        if not prompt:
+            raise ValueError("xAI video request requires a text prompt")
+
+        payload: dict[str, Any] = {"model": model, "prompt": prompt}
+        if image_url is not None:
+            payload["image"] = {"url": image_url}
+        if reference_image_urls:
+            payload["reference_images"] = [{"url": url} for url in reference_image_urls]
+        if req.duration is not None:
+            payload["duration"] = req.duration
+        if req.ratio is not None:
+            payload["aspect_ratio"] = req.ratio
+        if req.resolution is not None:
+            payload["resolution"] = req.resolution
+        return payload
+
+    async def _request_json(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        async with httpx.AsyncClient(
+            base_url=self._base_url,
+            headers={
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+            },
+            timeout=self._request_timeout,
+        ) as client:
+            try:
+                response = await client.request(method, path, json=payload)
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                body = exc.response.text
+                raise RuntimeError(
+                    f"{method} {exc.request.url} failed: "
+                    f"HTTP {exc.response.status_code}: {body}"
+                ) from exc
+            except httpx.RequestError as exc:
+                raise RuntimeError(f"{method} {exc.request.url} failed: {exc}") from exc
+
+        try:
+            result = response.json()
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"{method} {response.request.url} returned non-JSON response: "
+                f"{response.text[:500]}"
+            ) from exc
+        if not isinstance(result, dict):
+            raise RuntimeError(
+                f"{method} {response.request.url} returned unexpected JSON: {result!r}"
+            )
+        return result
+
+    @staticmethod
+    def _request_id(data: Mapping[str, Any]) -> str:
+        request_id = data.get("request_id") or data.get("id")
+        if isinstance(request_id, str) and request_id:
+            return request_id
+        raise RuntimeError(f"xAI video response did not include request_id: {data!r}")
+
+    @staticmethod
+    def _nested_mapping(data: Mapping[str, Any], key: str) -> Mapping[str, Any] | None:
+        value = data.get(key)
+        return value if isinstance(value, Mapping) else None
+
+    @classmethod
+    def _video_url(cls, data: Mapping[str, Any]) -> str:
+        for key in ("video_url", "output_url", "public_url"):
+            value = data.get(key)
+            if isinstance(value, str) and value:
+                return value
+        for container_key in ("video", "result", "output", "content", "data"):
+            container = cls._nested_mapping(data, container_key)
+            if container is None:
+                continue
+            try:
+                return cls._video_url(container)
+            except RuntimeError:
+                pass
+        value = data.get("url")
+        if isinstance(value, str) and value:
+            return value
+        raise RuntimeError(
+            f"xAI completed response did not include a video URL: {data!r}"
+        )
+
+    @staticmethod
+    def _error_message(data: Mapping[str, Any]) -> str:
+        err = data.get("error")
+        if isinstance(err, Mapping):
+            code = str(err.get("code") or "UNKNOWN")
+            message = str(err.get("message") or err)
+            return f"{code}: {message}"
+        if err:
+            return str(err)
+        return str(data)
+
+    async def submit(self, req: VideoGenRequest) -> VideoSubmitResult:
+        model = req.model or self._default_model
+        payload = self._build_payload(req, model=model)
+        data = await self._request_json(
+            "POST",
+            "/videos/generations",
+            payload=payload,
+        )
+        return VideoSubmitResult(provider_task_id=self._request_id(data))
+
+    async def poll(self, provider_task_id: str) -> VideoPollResult:
+        data = await self._request_json(
+            "GET",
+            f"/videos/{quote(provider_task_id, safe='')}",
+        )
+        status = str(data.get("status") or "").lower() or "unknown"
+        if status in {"done", "succeeded", "success"}:
+            return VideoPollResult(status="succeeded", video_url=self._video_url(data))
+        if status in {"failed", "error"}:
+            return VideoPollResult(status="failed", error=self._error_message(data))
+        if status in {"expired"}:
+            return VideoPollResult(status="failed", error="xAI video task expired")
+        return VideoPollResult(status=status)

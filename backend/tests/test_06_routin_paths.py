@@ -24,7 +24,9 @@ from ai_drama.adapters.base import (
     VideoContentItem,
     VideoGenRequest,
     VideoImageSlot,
+    VideoSlotKind,
 )
+from ai_drama.adapters.registry import get_video_adapter
 
 _TINY_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB"
@@ -77,6 +79,48 @@ def test_video_content_uses_compiled_canvas_input_order(tmp_path, monkeypatch):
     assert [item["type"] for item in content] == ["image_url", "text"]
     assert content[0]["role"] == "reference_image"
     assert content[1]["text"] == "根据 @图1 生成一段口播视频"
+
+
+def test_xai_video_payload_uses_reference_images_and_ratio(tmp_path, monkeypatch):
+    monkeypatch.setattr(routin, "GENERATED_IMAGES_DIR", tmp_path)
+    image_path = tmp_path / "generated.png"
+    image_path.write_bytes(_TINY_PNG)
+
+    req = VideoGenRequest(
+        ordered_content=[
+            VideoContentItem(
+                type=MultimodalContentType.TEXT,
+                text="生成一段竖屏短剧镜头",
+            ),
+            VideoContentItem(
+                type=MultimodalContentType.IMAGE,
+                image=VideoImageSlot(
+                    ref="/images/generated.png",
+                    kind=VideoSlotKind.REFERENCE,
+                ),
+            ),
+        ],
+        duration=10,
+        resolution="720p",
+        ratio="9:16",
+    )
+
+    payload = routin.RoutinVideoAdapter2._build_payload(req, model="grok-test")
+
+    assert payload["model"] == "grok-test"
+    assert payload["prompt"] == "生成一段竖屏短剧镜头"
+    assert payload["duration"] == 10
+    assert payload["resolution"] == "720p"
+    assert payload["aspect_ratio"] == "9:16"
+    assert payload["reference_images"][0]["url"].startswith("data:image/png;base64,")
+
+
+def test_routin_video_registry_uses_temporary_xai_adapter(monkeypatch):
+    monkeypatch.setattr(routin, "_require_api_key", lambda: "test-key")
+
+    adapter = get_video_adapter("routin")
+
+    assert isinstance(adapter, routin.RoutinVideoAdapter2)
 
 
 def test_image_content_uses_compiled_canvas_input_order():
