@@ -153,6 +153,7 @@ const zh = {
     nodeEditor: "节点编辑",
     nothingSelected: "选中一个节点进行编辑。",
     orderedInputs: "输入节点",
+    removeInputConnection: "移除 {{name}} 的输入连接",
     moveUp: "上移",
     moveDown: "下移",
     nodeCount: "节点数",

@@ -39,6 +39,7 @@ import {
   Save,
   Sparkles,
   Timer,
+  Trash2,
   Type,
 } from "lucide-react";
 
@@ -168,6 +169,7 @@ export function CanvasWorkshop({
   const storeConnect = useCanvasStore((s) => s.connect);
   const addNodeToStore = useCanvasStore((s) => s.addNode);
   const reorderInput = useCanvasStore((s) => s.reorderInput);
+  const disconnectInput = useCanvasStore((s) => s.disconnectInput);
   const savedAt = useCanvasStore((s) => s.savedAt);
   const setContext = useCanvasStore((s) => s.setContext);
   const loadFromDto = useCanvasStore((s) => s.loadFromDto);
@@ -398,6 +400,16 @@ export function CanvasWorkshop({
     [reorderInput],
   );
 
+  const disconnectOrderedInput = useCallback(
+    (targetId: string, sourceId: string) => {
+      disconnectInput(targetId, sourceId);
+      if (draggedInputIdRef.current === sourceId) {
+        draggedInputIdRef.current = null;
+      }
+    },
+    [disconnectInput],
+  );
+
   const handleSave = async () => {
     await persist();
   };
@@ -620,36 +632,51 @@ export function CanvasWorkshop({
             <div className="ordered-inputs">
               <label>{t("canvas.orderedInputs")}</label>
               <ol className="ordered-input-list">
-                {orderedInputs.map((n) => (
-                  <li
-                    key={n.id}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={(event) => {
-                      event.preventDefault();
-                      const draggedId = draggedInputIdRef.current;
-                      if (draggedId) {
-                        reorderOrderedInput(selected.id, draggedId, n.id);
-                      }
-                      draggedInputIdRef.current = null;
-                    }}
-                  >
-                    <span
-                      className="drag-grip"
-                      draggable
-                      aria-label={t("canvas.orderedInputs")}
-                      title={t("canvas.orderedInputs")}
-                      onDragStart={(event) => {
-                        draggedInputIdRef.current = n.id;
-                        event.dataTransfer.effectAllowed = "move";
-                      }}
-                      onDragEnd={() => {
+                {orderedInputs.map((n) => {
+                  const inputLabel = n.label || n.kind;
+                  const removeLabel = t("canvas.removeInputConnection", {
+                    name: inputLabel,
+                  });
+                  return (
+                    <li
+                      key={n.id}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={(event) => {
+                        event.preventDefault();
+                        const draggedId = draggedInputIdRef.current;
+                        if (draggedId) {
+                          reorderOrderedInput(selected.id, draggedId, n.id);
+                        }
                         draggedInputIdRef.current = null;
                       }}
-                    />
-                    <InputNodeTypeIcon kind={n.kind} t={t} />
-                    <span className="input-node-label">{n.label || n.kind}</span>
-                  </li>
-                ))}
+                    >
+                      <span
+                        className="drag-grip"
+                        draggable
+                        aria-label={t("canvas.orderedInputs")}
+                        title={t("canvas.orderedInputs")}
+                        onDragStart={(event) => {
+                          draggedInputIdRef.current = n.id;
+                          event.dataTransfer.effectAllowed = "move";
+                        }}
+                        onDragEnd={() => {
+                          draggedInputIdRef.current = null;
+                        }}
+                      />
+                      <InputNodeTypeIcon kind={n.kind} t={t} />
+                      <span className="input-node-label">{inputLabel}</span>
+                      <button
+                        type="button"
+                        className="input-node-remove"
+                        aria-label={removeLabel}
+                        title={removeLabel}
+                        onClick={() => disconnectOrderedInput(selected.id, n.id)}
+                      >
+                        <Trash2 size={14} strokeWidth={2.2} aria-hidden />
+                      </button>
+                    </li>
+                  );
+                })}
               </ol>
             </div>
           )}

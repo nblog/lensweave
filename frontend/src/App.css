@@ -1445,6 +1445,31 @@ button.primary:disabled {
   white-space: nowrap;
 }
 
+.input-node-remove {
+  display: inline-grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  flex: 0 0 1.6rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-muted-soft);
+  cursor: pointer;
+}
+
+.input-node-remove:hover {
+  border-color: #fecaca;
+  background: #fff7f7;
+  color: #b42318;
+}
+
+.input-node-remove:focus-visible {
+  outline: 3px solid rgba(var(--color-primary-rgb), 0.14);
+  outline-offset: 1px;
+}
+
 .input-node-type-icon {
   display: inline-grid;
   place-items: center;

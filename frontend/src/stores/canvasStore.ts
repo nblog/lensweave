@@ -127,6 +127,7 @@ type CanvasState = {
     sourceId: string,
     targetSourceId: string,
   ) => void;
+  disconnectInput: (targetId: string, sourceId: string) => void;
   patchNode: (id: string, patch: Partial<NodeData>) => void;
 
   // --- DTO / persistence ---
@@ -287,6 +288,15 @@ export const useCanvasStore = create<CanvasState>((set, get) => ({
             : edge,
         ),
       };
+    }),
+
+  disconnectInput: (targetId, sourceId) =>
+    set((s) => {
+      const nextEdges = s.edges.filter(
+        (edge) => !(edge.target === targetId && edge.source === sourceId),
+      );
+      if (nextEdges.length === s.edges.length) return s;
+      return { edges: normalizeTargetInputOrders(nextEdges, targetId) };
     }),
 
   patchNode: (id, patch) =>
@@ -622,6 +632,26 @@ function resolveAssetRef(ref: ShotAssetRef): {
     return { refId: null, label: ref.assetName };
   }
   return { refId: null };
+}
+
+function normalizeTargetInputOrders(edges: Edge[], targetId: string): Edge[] {
+  const orderByEdgeId = new Map(
+    edges
+      .filter((edge) => edge.target === targetId)
+      .sort((a, b) => edgeOrder(a) - edgeOrder(b))
+      .map((edge, index) => [edge.id, index + 1]),
+  );
+  return edges.map((edge) =>
+    edge.target === targetId && orderByEdgeId.has(edge.id)
+      ? {
+          ...edge,
+          data: {
+            ...(edge.data as Record<string, unknown> | undefined),
+            order: orderByEdgeId.get(edge.id),
+          },
+        }
+      : edge,
+  );
 }
 
 /**

@@ -159,6 +159,7 @@ const en = {
     nodeEditor: "Node editor",
     nothingSelected: "Select a node to edit it.",
     orderedInputs: "Input nodes",
+    removeInputConnection: "Remove input connection from {{name}}",
     moveUp: "Move up",
     moveDown: "Move down",
     nodeCount: "Nodes",
