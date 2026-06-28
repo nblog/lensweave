@@ -1,0 +1,113 @@
+family: grok-video
+display_name: "Grok Video (xAI)"
+provider: xai
+routing_prefixes:
+  - grok-imagine-video
+supported_backends:
+  - routin
+default_backend: routin
+credential_sources:
+  routin:
+    - ROUTIN_API_KEY
+supported_modalities:
+  - t2v
+  - i2v
+  - r2v
+models:
+  - id: grok-imagine-video
+    display_name: Grok Imagine Video
+    description: xAI Grok video generation through the Routin xAI-compatible Videos API
+    runtime:
+      routin:
+        gateway: routin
+        base_url: https://api.routin.ai/xai/v1
+        api_family: xai
+        submit_path: /videos/generations
+        poll_path: /videos/{request_id}
+        terminal_statuses: [done, failed, expired]
+    modes:
+      t2v:
+        legacy_id: grok-imagine-video-t2v
+        display_name: Grok Imagine Video T2V
+        description: Text-to-video generation
+        capabilities: [t2v]
+        duration:
+          type: slider
+          min: 1
+          max: 15
+          step: 1
+          default: 5
+        params:
+          prompt:
+            required: true
+          ratio:
+            request_field: aspect_ratio
+            options: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"]
+            default: "16:9"
+          resolution:
+            options: [480p, 720p]
+            default: 720p
+          seed: false
+          negativePrompt: false
+          promptExtend: false
+          watermark: false
+      i2v:
+        legacy_id: grok-imagine-video-i2v
+        display_name: Grok Imagine Video I2V
+        description: Image-to-video generation from one starting image
+        capabilities: [i2v]
+        duration:
+          type: slider
+          min: 1
+          max: 15
+          step: 1
+          default: 5
+        params:
+          prompt:
+            required: true
+          ratio:
+            request_field: aspect_ratio
+            options: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"]
+            default: "16:9"
+          resolution:
+            options: [480p, 720p]
+            default: 720p
+          seed: false
+          negativePrompt: false
+          promptExtend: false
+          watermark: false
+        inputs:
+          first_frame:
+            max: 1
+            reference_type: image
+            request_field: image
+      r2v:
+        legacy_id: grok-imagine-video-r2v
+        display_name: Grok Imagine Video R2V
+        description: Reference-to-video generation guided by up to 7 reference images
+        capabilities: [r2v]
+        duration:
+          type: slider
+          min: 1
+          max: 10
+          step: 1
+          default: 5
+        params:
+          prompt:
+            required: true
+          ratio:
+            request_field: aspect_ratio
+            options: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"]
+            default: "16:9"
+          resolution:
+            options: [480p, 720p]
+            default: 720p
+          seed: false
+          negativePrompt: false
+          promptExtend: false
+          watermark: false
+        inputs:
+          reference_images:
+            max: 7
+            reference_type: image
+            request_field: reference_images

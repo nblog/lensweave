@@ -19,8 +19,6 @@ models:
     display_name: Seedance 2.0
     description: ByteDance Seedance 2.0 video generation
     runtime:
-      mulerouter:
-        gateway: mulerouter
       routin:
         gateway: routin
     modes:
