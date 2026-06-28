@@ -1,6 +1,6 @@
 # 01 · 领域模型
 
-数据模型是整个系统的地基。本文把 [pipeline](../test/instructions/00_pipeline.md) 的阶段契约落成两层：**pydantic schema**（序列化、校验、前后端契约）与 **SQLAlchemy ORM**（持久化、可迁移）。两层职责分离——pydantic 是"对外的形状"，ORM 是"落盘的形状"，service 层负责在两者间转换。
+数据模型是整个系统的地基。本文把 pipeline 的阶段契约落成两层：**pydantic schema**（序列化、校验、前后端契约）与 **SQLAlchemy ORM**（持久化、可迁移）。两层职责分离——pydantic 是"对外的形状"，ORM 是"落盘的形状"，service 层负责在两者间转换。
 
 设计取向遵循"schema 即约束"：把数据模型本身当作护栏，用类型化字段、validator、computed field 把"无穷多种正确路径"收敛到 pipeline 能消费的一条。下游 agent 与前端画布都不应绕过这些约束自造结构。
 
@@ -324,7 +324,7 @@ class CanvasGraph(BaseModel):
 画布是"用户看到的形状"，适配器需要的是"有序的输入 + 参数"。编译以**适配器节点**为单位（ADR-006）：
 
 1. 选定一个适配器节点（如某个 `VIDEO_GEN`），回溯其所有入边。
-2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`，见 [08](../test/instructions/08_视频生成执行.md)）。顺序直接作用在 adapter 的最终多模态 `content` 上。
+2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`。顺序直接作用在 adapter 的最终多模态 `content` 上。
 3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`TEXT_GEN` 会按顺序收集所有文本输入到 `input_texts`，由支持多消息上下文的 adapter（如 AgentScope Routin adapter）投影为 `list[UserMsg]`。`IMAGE_GEN` / `VIDEO_GEN` 都会把 `CanvasEdge.order` 编译成 `ordered_content`，用于 provider 侧的真实多模态上下文顺序；同时读取上游文本节点当前保存的 `visual_prompt/text`。`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的当前 episode 可见 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
 4. 编译产物是对应的 `TextGenRequest` / `ImageGenRequest` / `VideoGenRequest`（见 [02 适配层](02_adapter.md)），直接喂给对应 adapter。
 
@@ -407,7 +407,7 @@ class GenerationJob(Base):
     updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
 ```
 
-> `GenerationJob.provider_task_id` 直接对应 [videogen.py](../test/videogen.py) 的 `poll` 命令思路：本地轮询被打断时，任务在渠道侧继续跑，凭这个 id 恢复。这是 ADR-003"重启可恢复"的字段支撑。
+> `GenerationJob.provider_task_id` 直接对应 videogen 的 `poll` 命令思路：本地轮询被打断时，任务在渠道侧继续跑，凭这个 id 恢复。这是 ADR-003"重启可恢复"的字段支撑。
 
 ### 3.1 JSON 列 vs 拆表的取舍
 

@@ -13,7 +13,7 @@ api/ (FastAPI 路由)  ─┐
 cli/ (Typer 命令)    ─┴─► services/ (业务逻辑) ─► adapters/ + db/ + pipeline/
 ```
 
-service 层函数是异步的、不依赖 FastAPI/Typer 的纯业务函数。CLI 用 `asyncio.run` 包一层（对齐 PoC 里 [textgen.py](../test/textgen.py) 的 `_run_generate` 模式），API 直接 `await`。
+service 层函数是异步的、不依赖 FastAPI/Typer 的纯业务函数。CLI 用 `asyncio.run` 包一层（对齐 PoC 里 textgen 的 `_run_generate` 模式），API 直接 `await`。
 
 ## 2. Typer CLI（`src/ai_drama/cli/`）
 
@@ -32,7 +32,7 @@ ai-drama video submit     --episode 1 --node vg                   # 08 提交视
 ai-drama job poll         --job <job_id>                          # 恢复轮询（对齐 videogen.py poll）
 ```
 
-> 设计取向：CLI 命令与 pipeline 阶段一一对应，让"渐进式验证"成为可能——可以只跑 `storyboard run` 验证 06 的结构输出，不必跑完整链路。这正是把 [test/](../test/) 里 PEP 723 脚本的"单脚本单能力"理念延续到工程版。
+> 设计取向：CLI 命令与 pipeline 阶段一一对应，让"渐进式验证"成为可能——可以只跑 `storyboard run` 验证 06 的结构输出，不必跑完整链路。
 
 ## 3. FastAPI 接口（`src/ai_drama/api/`）
 
@@ -122,7 +122,7 @@ queued ──► running ──► succeeded
                   └──► canceled
 ```
 
-对齐 [videogen.py](../test/videogen.py) 的 `TERMINAL_STATUSES = {succeeded, failed, canceled}`。
+对齐 videogen 的 `TERMINAL_STATUSES = {succeeded, failed, canceled}`。
 
 ### 4.2 提交—轮询流程
 
@@ -143,7 +143,7 @@ queued ──► running ──► succeeded
  │      clip_path} ──────────┤                          │                          │
 ```
 
-BackgroundTask 内部的轮询循环直接复用 [videogen.py](../test/videogen.py) `_poll_task` 的逻辑：固定间隔轮询、终态退出、超时保护。
+BackgroundTask 内部的轮询循环直接复用 videogen `_poll_task` 的逻辑：固定间隔轮询、终态退出、超时保护。
 
 ### 4.3 重启恢复（轻量模型的代价对冲）
 
@@ -163,7 +163,7 @@ BackgroundTask 内部的轮询循环直接复用 [videogen.py](../test/videogen.
 ## 5. 错误处理与可观测
 
 - service 抛领域异常（如 `SegmentCollapseError` 来自段数校验），API 层统一映射为结构化错误响应（`{code, message, detail}`）。
-- job 失败时 `error` 字段存渠道返回的 `code/message`（对齐 [videogen.py:190](../test/videogen.py#L190) 的错误提取），前端可展示。
+- job 失败时 `error` 字段存渠道返回的 `code/message`（对齐 videogen 的错误提取），前端可展示。
 - 日志：每个 job 的提交、状态变更、终态各记一条，带 `job_id` / `provider_task_id` 便于回溯。
 
 ## 6. 非目标

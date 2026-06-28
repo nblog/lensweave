@@ -36,18 +36,14 @@ Segment 是未来逐段出片的最小结构单元：一集短剧最终会由多
 
 ## 2. PoC 现状（工程化的起点）
 
-`test/` 下已有四个可独立运行的 PEP 723 脚本，它们是适配层要抹平的原始素材：
-
-| 能力 | 脚本 | SDK | 默认模型 | 网关 |
-|---|---|---|---|---|
-| 文本生成 | [test/textgen.py](../test/textgen.py) | AgentScope 2.x | `deepseek-v4-pro` | `api.routin.ai/v1` |
-| 文生图 / 图文生图 | [test/imagegen2.py](../test/imagegen2.py) | agent-framework (OpenAI Responses + `image_generation` tool) | `gpt-5.4` | `api.routin.ai/v1` |
-| 图文生视频 | [test/videogen.py](../test/videogen.py) | Volcengine Ark Runtime | `doubao-seedance-2-0-fast` | `api.routin.ai/api/v3` |
-| 图文生视频（备） | [test/videogen-xai.py](../test/videogen-xai.py) | xai-sdk | — | `api.routin.ai/xai/v1` |
+| 能力 | SDK | 默认模型 |
+|---|---|---|
+| 文本生成 | AgentScope 2.x | `deepseek-v4-pro` |
+| 文生图 / 图文生图 | agent-framework (OpenAI Responses + `image_generation` tool) | `gpt-5.4` |
+| 图文生视频 | Volcengine Ark Runtime | `doubao-seedance-2-0-fast` |
+| 图文生视频（备） | xai-sdk | — |
 
 三个核心脚本指向同一个网关 `api.routin.ai` 却走了三套 SDK——这正是适配层存在的理由（见 [ADR-002](#adr-002-适配层抽象最小生成契约由渠道继承)）。三者已统一的约定：BOM 容忍的 UTF-8 读取、`--prompt-file` 长输入、异步任务提交 + 轮询、本地图片内联为 `data:` URI、参考图槽与首尾帧槽互斥。
-
-> ⚠️ 安全项：PoC 脚本里 API key 是硬编码的（如 [test/imagegen2.py:45](../test/imagegen2.py#L45)）。工程版统一收敛到 `.env` + pydantic-settings，密钥不入库（`.gitignore` 覆盖 `.env`）。
 
 ## 3. 技术选型
 

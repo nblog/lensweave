@@ -10,11 +10,11 @@
 
 三个 PoC 指向同一个网关 `api.routin.ai`，却用了三套 SDK：
 
-| 能力 | PoC | SDK | 调用形态 |
-|---|---|---|---|
-| 文本 | [textgen.py](../test/textgen.py) | AgentScope `Agent.reply_stream` | 流式事件 |
-| 图像 | [imagegen2.py](../test/imagegen2.py) | agent-framework `image_generation` tool | 流式 partial-image |
-| 视频 | [videogen.py](../test/videogen.py) | Volcengine Ark `content_generation.tasks` | 异步提交 + 轮询 |
+| 能力 | SDK | 调用形态 |
+|---|---|---|
+| 文本 | AgentScope `Agent.reply_stream` | 流式事件 |
+| 图像 | agent-framework `image_generation` tool | 流式 partial-image |
+| 视频 | Volcengine Ark `content_generation.tasks` | 异步提交 + 轮询 |
 
 三者的"提交方式""结果形态""参数命名"都不同。如果 pipeline 直接调 SDK，每接一个新厂商就要改一遍 pipeline。适配层把差异锁在边界内：契约对上稳定，实现对下可换。
 
@@ -77,7 +77,7 @@ class ImageAdapter(ABC):
 
 ### 2.3 视频生成（图文生视频，异步）
 
-这是唯一天然异步的能力。基类把"提交"与"轮询"拆成两个方法，直接映射 [videogen.py](../test/videogen.py) 的 `generate` / `poll` 双命令——这也是 [ADR-003](00_overview.md#adr-003-异步任务走轻量模型无独立-broker) 可恢复轮询的根。
+这是唯一天然异步的能力。基类把"提交"与"轮询"拆成两个方法，直接映射 videogen 的 `generate` / `poll` 双命令——这也是 [ADR-003](00_overview.md#adr-003-异步任务走轻量模型无独立-broker) 可恢复轮询的根。
 
 ```python
 class VideoSlotKind(StrEnum):
@@ -128,7 +128,7 @@ class VideoAdapter(ABC):
     async def poll(self, provider_task_id: str) -> VideoPollResult: ...
 ```
 
-> `ImageGenRequest.ordered_content` / `VideoGenRequest.ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影，也是图像/视频请求里唯一的多模态上下文来源：它保留 text/image 混合顺序，分别投影为 agent-framework 的 `Message.contents` 与 Ark 的 content array。`VideoGenRequest._slots_exclusive` 把 [videogen.py:340](../test/videogen.py#L340) 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽（[08](../test/instructions/08_视频生成执行.md) 的核心机制），首尾帧槽保留给未来可能的其他渠道。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
+> `ImageGenRequest.ordered_content` / `VideoGenRequest.ordered_content` 是 `CanvasEdge.order` 的 provider-side 投影，也是图像/视频请求里唯一的多模态上下文来源：它保留 text/image 混合顺序，分别投影为 agent-framework 的 `Message.contents` 与 Ark 的 content array。`VideoGenRequest._slots_exclusive` 把 videogen 的服务端约束提前到客户端 schema——错误在构造请求时就暴露，而不是等渠道返回 BadRequest。pipeline 全程只走参考图槽的核心机制），首尾帧槽保留给未来可能的其他渠道。TextGen 的 `input_texts` 采用同一条 order 语义，Routin 通道最终投影为 AgentScope 的 `list[UserMsg]`。`duration` / `resolution` 的默认值与可选范围不写在 adapter contract 中，而由 [ADR-007](00_overview.md#adr-007-模型参数约束以-catalog-yaml-为真源运行时只消费-pydantic-视图) 的 typed model catalog view 在画布编译阶段填入。
 
 ## 3. routin 实现（`src/ai_drama/adapters/routin/`）
 
@@ -144,7 +144,7 @@ adapters/
    └─ video.py             # RoutinVideoAdapter  ← Volcengine Ark Runtime
 ```
 
-每个实现只做三件事：把 `*GenRequest` 翻译成 SDK 入参、调 SDK、把结果收敛回 `*GenResult`。PoC 脚本里的纯函数（如 [imagegen2.py](../test/imagegen2.py) 的 `_image_ref_to_content` / `_save_data_uri`、[videogen.py](../test/videogen.py) 的 `_build_content` / `_image_ref_to_url`）可直接搬进对应实现的私有方法，保留 PoC 已踩过的坑（如 Ark image content 必填 `role`、本地图内联为 base64 data URI）。
+每个实现只做三件事：把 `*GenRequest` 翻译成 SDK 入参、调 SDK、把结果收敛回 `*GenResult`。PoC 脚本里的纯函数的 `_image_ref_to_content` / `_save_data_uri`、videogen 的 `_build_content` / `_image_ref_to_url`）可直接搬进对应实现的私有方法，保留 PoC 已踩过的坑（如 Ark image content 必填 `role`、本地图内联为 base64 data URI）。
 
 工程版还要处理一个前后端边界：生成图片返回给前端的是浏览器预览 URL（如 `/images/xxx.webp`），而图生图 / 图文生视频适配器需要的是可读本地文件或远端可访问 URL。因此 routin adapter 在真正组装 provider 请求前，会把后端自身的 `/images/...` 静态 URL 还原到 `outputs/images/...` 再内联为 data URI；不要把 `/images/...` 当作文件系统根目录路径。图像生成 job 会先把 provider 原图归档到 `outputs/images/raw/`，再由 service 层用 Pillow 生成几百 KB 量级的工作副本写到 `outputs/images/` 根目录；前端预览、画布持久化、后续 ImageGen / VideoGen 节点都只使用压缩后的工作副本，raw 仅用于归档和人工追溯。
 
@@ -177,7 +177,7 @@ def get_image_adapter(channel: str = "routin") -> ImageAdapter: ...
 def get_video_adapter(channel: str = "routin") -> VideoAdapter: ...
 ```
 
-接入新厂商（如直接走 xAI，对应 [videogen-xai.py](../test/videogen-xai.py)）只需：新建 `adapters/xai/video.py` 继承 `VideoAdapter`，在 `_VIDEO` 注册一行。pipeline、service、API 全不动——这就是 ADR-002 的扩展承诺。
+接入新厂商（如直接走 xAI）只需：新建 `adapters/xai/video.py` 继承 `VideoAdapter`，在 `_VIDEO` 注册一行。pipeline、service、API 全不动——这就是 ADR-002 的扩展承诺。
 
 ## 5. 与上层的衔接
 
