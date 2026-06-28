@@ -102,7 +102,7 @@ def seed_demo(
             segments=[
                 Segment(
                     segment_id=1,
-                    duration_sec=6,
+                    duration_sec=5,
                     visual_prompt=(
                         "极慢推进，中景到近景；女主立于国公府前院大门内侧，"
                         "背对大门面朝内堂，指尖捏紧衣角，瞳孔骤缩——画面无字幕。"
