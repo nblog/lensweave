@@ -1,8 +1,8 @@
 /** English locale. Keys grouped by area; keep in sync with zh.ts. */
 const en = {
   app: {
-    title: "AI Drama Flow",
-    subtitle: "AI short-drama / comic-drama production platform",
+    title: "Lensweave",
+    subtitle: "Weave stories into shootable shot canvases",
     back: "Back",
   },
   nav: {

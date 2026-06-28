@@ -1,8 +1,8 @@
 /** Chinese locale (default). Keys grouped by area; keep in sync with en.ts. */
 const zh = {
   app: {
-    title: "AI 短剧工坊",
-    subtitle: "AI 短剧 / 漫剧生产平台",
+    title: "镜织 Lensweave",
+    subtitle: "视界无疆，剧情自织。",
     back: "返回",
   },
   nav: {

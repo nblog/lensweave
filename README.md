@@ -1,58 +1,44 @@
-# AI Drama Flow
+# 镜织 Lensweave
 
-AI 短剧 / 漫剧生产平台。把"小说 / 剧情 → 视频"的链路工程化为一个有数据模型、适配层、前后端的可迭代系统。
+<p align="center">
+  <img src="frontend/public/lensweave-logo.png" alt="Lensweave logo" width="160" />
+</p>
 
-## 目录
+**视界无疆，剧情自织。**
 
-```
-docs/       设计文档（00–05）
-backend/    Python 后端 core（uv · FastAPI · Typer · SQLAlchemy · pydantic）
-frontend/   TypeScript 前端（Vite · React · react-i18next · TanStack Query）
-test/       原 PoC 脚本与 pipeline instructions（保留作参考与迁移基准）
-```
+**镜织** 是一个面向短剧、漫剧与影像叙事设计师的 AI 分镜工坊。它不急着把一段小说或剧情直接推向成片，而是先把故事拆成可以讨论、可以调整、可以复用的视觉材料：人物、场景、道具、镜头提示、参考图与生成节点。设计师可以像整理 moodboard、shot board 和镜头关系图一样，把松散的文本逐步织成可拍摄、可生成的视频段。
 
-## 本地运行
+这个名字里，“镜”指镜头、视角与分镜，“织”指叙事线、视觉资产、提示词和节点连接之间的编排关系。Lensweave 想表达的不是一条黑箱式流水线，而是一张能被创作者看见和改动的镜头织物：每一条连线都携带上下文顺序，每一个资产都承担角色一致性，每一个生成节点都是一次可回看的创作决定。
 
-### 后端
+![镜织 EP 工坊画布](docs/canvas.png)
+
+上图是镜织的核心工作台：人物、场景、分镜稿、镜头文本和视频生成节点被放在同一张画布上。设计师可以从左上方添加节点、选择生成通道，把素材和提示词按镜头语义连入生成节点；右侧检查器用于编辑当前节点，左侧状态浮层记录节点数量与保存时间。它更接近一张可执行的 shot board，而不是一个只能填写 prompt 的表单。
+
+## 它在帮助设计师做什么
+
+镜织的核心是 EP 工坊。你可以先为一个项目建立人物、场景和道具资产，再进入某一集的画布，把文本节点、图像节点、图像生成节点和视频生成节点放到同一张工作台上。图像和文本按顺序连入生成节点时，画布会保存这些输入的语义顺序；这让“女主参考图、宅院场景、关键道具、镜头提示词”不再只是堆在 prompt 里的文字，而是变成可检查、可重排、可保存的创作结构。
+
+从截图里也能看到它的工作方式：上游资产提供角色一致性和场景基准，中间的文本节点承载镜头意图，生成节点负责把这些上下文编译成图像或视频草案。mock 通道可以让你在没有真实模型密钥时验证完整体验；接入真实通道后，同一张画布可以继续承载图像与视频生成。
+
+## Quick Start
+
+先启动后端：
 
 ```bash
 cd backend
-uv sync                              # 安装依赖（mock 渠道无需密钥）
-# uv sync --extra routin             # 需要真实视频渠道时，额外装 Volcengine Ark SDK
-cp .env.example .env                 # 填入 ROUTIN_API_KEY（仅 routin 渠道需要）
-uv run ai-drama --help               # 查看 CLI
-uv run ai-drama seed-demo            # ★ 一键端到端：建项目→资产→分集→分镜→画布→出片(mock)
-uv run ai-drama serve                # 启动 FastAPI（默认 http://127.0.0.1:8080）
+uv sync
+uv run ai-drama serve
 ```
 
-`seed-demo` 用离线 mock 渠道在无网络、无密钥下跑通整条链路，输出一段占位 MP4 的路径——最快验证后端切片是否完整。真实出片把 `--channel routin` 传入（需先 `uv sync --extra routin` 并配好 `.env`）。
-
-### 前端
+再启动前端：
 
 ```bash
 cd frontend
 npm install
-npm run dev                          # 默认 http://localhost:3000
+npm run dev
 ```
 
-打开浏览器：创建项目 → 打开项目（加人物 / 场景资产、建分集）→ 进入 EP 工坊。在工坊里：
+- 打开 [http://localhost:3000](http://localhost:3000)，
+- 创建一个项目，添加分集，然后进入 EP 工坊。你可以从左侧放置文本、图像和生成节点，把它们连接到视频生成节点上，再点击生成。
 
-1. 从左侧节点面板拖出「图像」「文本」「视频生成」节点。
-2. 在图像节点引用人物 / 场景资产，在文本节点填写镜头提示词。
-3. 把图像节点和文本节点连入「视频生成」节点——连线上的数字就是上下文顺序。
-4. 选中「视频生成」节点，按需要调整视频时长与分辨率。
-5. 点「生成视频」——前端轮询任务状态，成功后在生成节点内嵌播放视频（mock 渠道为占位片）。
-
-> 画布会在交互层就阻止非法连线（资产节点只能连向内容 / 输出，输出节点是汇点，不成环）——这是前端"约束用户不越界"的第一道护栏，后端 schema 是最终防线。
-
-> **端口说明**：默认后端端口是 **8080**。如需改端口：后端 `uv run ai-drama serve --port <port>`，前端在 `frontend/.env` 设 `VITE_API_BASE_URL`。
-
-## 测试
-
-```bash
-cd backend && uv run pytest -q       # schema 不变量 / 画布编译 / 异步 job 端到端（mock）
-```
-
-## 安全
-
-API 密钥统一走 `backend/.env`（已 gitignore），不硬编码、不入库。FastAPI 当前无鉴权，仅供本地使用；若日后暴露到网络须先补鉴权。
+> 真实图像或视频生成需要在 `backend/.env` 里配置对应通道的密钥；只想先体验画布和端到端结构时，使用默认 mock 流程就足够（无真实生产）。

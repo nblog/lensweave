@@ -1,6 +1,6 @@
 /** Root layout and URL routes for the page flow in docs/04 §2. */
 import { useTranslation } from "react-i18next";
-import { ArrowLeft, Clapperboard, FolderKanban, Globe2 } from "lucide-react";
+import { ArrowLeft, FolderKanban, Globe2 } from "lucide-react";
 import {
   Link,
   Navigate,
@@ -34,8 +34,8 @@ function App() {
       <header className="topbar">
         <div className="topbar-inner">
           <Link className="brand" to="/projects" aria-label={t("app.title")}>
-            <span className="brand-mark">
-              <Clapperboard size={20} aria-hidden />
+            <span className="brand-mark" aria-hidden="true">
+              <img src="/favicon.svg" alt="" />
             </span>
             <span className="brand-copy">
               <h1>{t("app.title")}</h1>
