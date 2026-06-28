@@ -51,4 +51,6 @@ npm run dev
 
 ## 反馈
 
-任何问题 / BUG，都可以提 [issues](https://github.com/nblog/lensweave/issues)；建议或新增需求会根据情况尽力满足。✨
+遇到问题或有想法？欢迎提 [issues](https://github.com/nblog/lensweave/issues) 🙌
+
+也欢迎分享任何新颖、有创意的 idea，会保持积极推进 🚀
