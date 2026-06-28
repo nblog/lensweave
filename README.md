@@ -50,7 +50,7 @@ npm run dev                          # 默认 http://localhost:3000
 ## 测试
 
 ```bash
-cd backend && uv run pytest -q       # schema 不变量 / 画布编译 / 异步 job 端到端（mock，13 用例）
+cd backend && uv run pytest -q       # schema 不变量 / 画布编译 / 异步 job 端到端（mock）
 ```
 
 ## 安全

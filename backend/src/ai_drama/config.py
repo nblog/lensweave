@@ -16,9 +16,10 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Backend project root (…/backend), used to anchor the SQLite file and .env.
+# Backend project root (…/backend), used to anchor the .env file.
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 OUTPUTS_ROOT = BACKEND_ROOT.parent / "outputs"
+LOCAL_DATABASE_PATH = OUTPUTS_ROOT / "ai_drama.db"
 GENERATED_CLIPS_DIR = OUTPUTS_ROOT / "clips"
 GENERATED_IMAGES_DIR = OUTPUTS_ROOT / "images"
 
@@ -34,8 +35,11 @@ class Settings(BaseSettings):
 
     # --- storage ---
     database_url: str = Field(
-        default=f"sqlite:///{(BACKEND_ROOT / 'ai_drama.db').as_posix()}",
-        description="SQLAlchemy database URL. Defaults to a local SQLite file.",
+        default=f"sqlite:///{LOCAL_DATABASE_PATH.as_posix()}",
+        description=(
+            "SQLAlchemy database URL. Defaults to a resettable SQLite file under "
+            "outputs/."
+        ),
     )
 
     # --- routin.ai gateway (single channel for v1, see docs/02_adapter.md) ---

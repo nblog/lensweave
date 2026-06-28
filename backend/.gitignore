@@ -11,4 +11,3 @@ wheels/
 
 # Secrets and local data (never commit API keys — see docs/00 §2)
 .env
-*.db

@@ -10,6 +10,7 @@ canvas nodes, carries panel/clip paths, and runs its own generation job.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import (
@@ -22,6 +23,7 @@ from sqlalchemy import (
     inspect,
     text,
 )
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import (
     DeclarativeBase,
     Mapped,
@@ -180,6 +182,18 @@ def _make_engine(url: str):
     return create_engine(url, connect_args=connect_args)
 
 
+def _ensure_sqlite_parent_dir(url: str) -> None:
+    parsed = make_url(url)
+    if parsed.get_backend_name() != "sqlite":
+        return
+
+    database = parsed.database
+    if not database or database == ":memory:" or database.startswith("file:"):
+        return
+
+    Path(database).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
 engine = _make_engine(get_settings().database_url)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
@@ -202,6 +216,7 @@ def init_db() -> None:
 
     Replaced by Alembic migrations in a later milestone (docs/05_roadmap.md).
     """
+    _ensure_sqlite_parent_dir(str(engine.url))
     Base.metadata.create_all(engine)
     _ensure_project_uid_column()
     _ensure_asset_project_column()

@@ -8,6 +8,38 @@ HTTP, and it round-trips through list and get.
 from __future__ import annotations
 
 
+def test_default_database_url_points_to_outputs(monkeypatch) -> None:
+    """The local SQLite database is part of resettable runtime output state."""
+
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    from ai_drama.config import LOCAL_DATABASE_PATH, get_settings
+
+    get_settings.cache_clear()
+    try:
+        assert (
+            get_settings().database_url
+            == f"sqlite:///{LOCAL_DATABASE_PATH.as_posix()}"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_sqlite_parent_directory_is_created(tmp_path) -> None:
+    """A fresh checkout can create its outputs-backed SQLite database on demand."""
+
+    from ai_drama import db as db_module
+
+    db_path = tmp_path / "outputs" / "ai_drama.db"
+    db_module.configure_database(f"sqlite:///{db_path.as_posix()}")
+    try:
+        db_module.init_db()
+        assert db_path.exists()
+    finally:
+        db_module.engine.dispose()
+        db_module.configure_database("sqlite:///:memory:")
+
+
 def test_health(client) -> None:
     resp = client.get("/health")
     assert resp.status_code == 200
