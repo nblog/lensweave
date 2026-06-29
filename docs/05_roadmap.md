@@ -46,7 +46,7 @@
 | `test/01_smoke_*` | 核心价值冒烟 | 三个 adapter 各跑一次最小真实调用（标 `@pytest.mark.live`，默认 skip，需 `.env`）；离线则跑 mock adapter |
 | `test/02_models_*` | schema 约束 | Segment 默认 15s / 单段上限、StoryboardJSON segment_id 去重；CanvasGraph DAG/连线合法性；枚举受控词表 |
 | `test/03_adapter_*` | 适配层契约 | 请求 schema 互斥规则（视频首尾帧 vs 参考图槽）；PoC 纯函数迁移后的等价性（data URI 编码、role 注入） |
-| `test/04_canvas_*` | 画布编译 | DAG → VideoGenRequest 的有序性（连线 order → 参考图固定顺序 @图1..@图4） |
+| `test/04_canvas_*` | 画布编译 | DAG → VideoGenRequest 的有序性（连线 order → 参考图固定顺序 @图片1..@图片4） |
 | `test/05_job_*` | 异步任务 | job 状态机；提交→轮询→终态；重启恢复（扫 running + provider_task_id 接回轮询） |
 | `test/06_e2e_*` | 端到端探索 | 建项目→建资产→分集→画布→出片全链路（live，手动触发） |
 

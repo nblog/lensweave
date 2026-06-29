@@ -324,7 +324,7 @@ class CanvasGraph(BaseModel):
 画布是"用户看到的形状"，适配器需要的是"有序的输入 + 参数"。编译以**适配器节点**为单位（ADR-006）：
 
 1. 选定一个适配器节点（如某个 `VIDEO_GEN`），回溯其所有入边。
-2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图1人物 @图2分镜资产 @图3场景 @图4道具`。顺序直接作用在 adapter 的最终多模态 `content` 上。
+2. 按 `CanvasEdge.order` 升序排列入边，得到**有序输入**——这正对应 08 阶段的参考图固定顺序（`@图片1=人物 @图片2=场景 @图片3=分镜 `。顺序直接作用在 adapter 的最终多模态 `content` 上。
 3. 按输入类型分流并保留混合顺序：`TEXT` 输入提供 prompt/content text；`TEXT_GEN` 会按顺序收集所有文本输入到 `input_texts`，由支持多消息上下文的 adapter（如 AgentScope Routin adapter）投影为 `list[UserMsg]`。`IMAGE_GEN` / `VIDEO_GEN` 都会把 `CanvasEdge.order` 编译成 `ordered_content`，用于 provider 侧的真实多模态上下文顺序；同时读取上游文本节点当前保存的 `visual_prompt/text`。`IMAGE` 输入提供参考图 content（来自 `ImageNode` 引用的当前 episode 可见 `Asset.image_path` 或上游 ImageGen 产物）。各图引用的 `Asset.kind` 承载人物/场景/道具语义。
 4. 编译产物是对应的 `TextGenRequest` / `ImageGenRequest` / `VideoGenRequest`（见 [02 适配层](02_adapter.md)），直接喂给对应 adapter。
 

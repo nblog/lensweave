@@ -69,7 +69,7 @@ def test_video_content_uses_compiled_canvas_input_order(tmp_path, monkeypatch):
             ),
             VideoContentItem(
                 type=MultimodalContentType.TEXT,
-                text="根据 @图1 生成一段口播视频",
+                text="根据 @图片1 生成一段口播视频",
             ),
         ],
     )
@@ -78,7 +78,7 @@ def test_video_content_uses_compiled_canvas_input_order(tmp_path, monkeypatch):
 
     assert [item["type"] for item in content] == ["image_url", "text"]
     assert content[0]["role"] == "reference_image"
-    assert content[1]["text"] == "根据 @图1 生成一段口播视频"
+    assert content[1]["text"] == "根据 @图片1 生成一段口播视频"
 
 
 def test_xai_video_payload_uses_reference_images_and_ratio(tmp_path, monkeypatch):

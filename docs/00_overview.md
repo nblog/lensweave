@@ -154,7 +154,7 @@ ai-drama-flow/
 
 **背景**：需求方要求节点是可派生的 struct（基类含 `name`，派生出文本 / 图像 / 视频与各类适配器节点），且适配器以"文→文 / 文+多图→图 / 文+多图→视频"三种形态对应已验证的三个 PoC 适配器。这把整条 pipeline 都纳入画布，新增一种适配器只需新增一个 `AdapterNode` 子类。
 
-**权衡**：相比专用图，节点种类更多、连线校验从 ad-hoc 规则升级为**端口类型兼容**校验（TextGen 入口只收 text，ImageGen/VideoGen 入口收 text + image*）。换来的是统一、可组合、可派生的模型——"生成资产图"也能在画布里完成，不必单开流程。人物 / 道具 / 场景不再是节点类型，语义由 `ImageNode` 引用的当前项目 `Asset.kind` 承载；参考图的 `@图1人物 @图3场景` 顺序约定降级为"适配器节点多图输入口的有序清单 + 各图引用的 `Asset.kind`"，与 [videogen.py](../test/videogen.py) 实际 API（参考图统一 `role=reference_image`）一致。
+**权衡**：相比专用图，节点种类更多、连线校验从 ad-hoc 规则升级为**端口类型兼容**校验（TextGen 入口只收 text，ImageGen/VideoGen 入口收 text + image*）。换来的是统一、可组合、可派生的模型——"生成资产图"也能在画布里完成，不必单开流程。人物 / 道具 / 场景不再是节点类型，语义由 `ImageNode` 引用的当前项目 `Asset.kind` 承载；参考图的 `@图片1=人物 @图片2=场景` 顺序约定降级为"适配器节点多图输入口的有序清单 + 各图引用的 `Asset.kind`"，与 [videogen.py](../test/videogen.py) 实际 API（参考图统一 `role=reference_image`）一致。
 
 **影响**：见 [01 领域模型](01_domain_model.md) §2.3 的节点继承体系与端口类型校验，以及 [04 前端](04_frontend.md) §3 的 6 种通用节点与连线护栏。
 
