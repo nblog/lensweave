@@ -39,7 +39,7 @@ schema 抽取是**逆向追踪**：构建插件扫描 `registerGlobalTools()` / 
 
 - `register.ts` 用 `import * as tools from "./tools"` 的 namespace import 是必须的——抽取器靠它解析源模块的所有导出函数。
 - 插件 `include` 必须覆盖 `register.ts`（当前 `src/mcp/**/*.ts` 即可）。单独 transform `tools.ts` 会因找不到注册调用而 `transformed: false`，这是预期行为。
-- 不直接用官方 `vite-plugin-webmcp-nexus`：它在 Windows 上用 `path.relative` 得到反斜杠路径去匹配只认 `/` 的 glob，导致无文件命中、schema 永不注入。本地 `vite-webmcp-plugin.ts` 包装同一个官方 `webmcp-nexus-core`（抽取逻辑不变），只在 include 匹配前把分隔符归一化为 `/`，跨平台一致。
+- 不直接用官方 `vite-plugin-webmcp-nexus`：它在 Windows 上用 `path.relative` 得到反斜杠路径去匹配只认 `/` 的 glob，导致无文件命中、schema 永不注入。本地 `vite-webmcp-plugin.ts` 包装同一个官方 `webmcp-nexus-core`，在 include 匹配前把分隔符归一化为 `/`，并在注入后补齐 array schema 的 `items`。后者是为了兼容 MCP 校验：`webmcp-nexus-core@0.1.x` 对 `assetRefs?: Array<{ ... }>` 这类对象数组可能生成裸 `{ type: "array" }`。
 
 ---
 

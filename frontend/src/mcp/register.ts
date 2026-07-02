@@ -20,11 +20,11 @@ export function startWebMcp(): void {
 
   registerGlobalTools(tools);
 
-  if (!document.querySelector("script[data-webmcp-relay]")) {
+  if (!document.querySelector("script[data-webmcp-relay-embed]")) {
     const script = document.createElement("script");
     script.src = RELAY_EMBED_SRC;
     script.async = true;
-    script.dataset.webmcpRelay = "true";
+    script.dataset.webmcpRelayEmbed = "true";
     document.head.appendChild(script);
   }
 }
