@@ -59,9 +59,9 @@ const en = {
     scopeGlobal: "Global asset",
     scopeFixed: "Project asset",
     scopeTemporary: "Temporary asset",
-    scopeTabGlobal: "Global assets ({{count}})",
-    scopeTabFixed: "Project assets ({{count}})",
-    scopeTabTemporary: "Temporary assets ({{count}})",
+    scopeTabGlobal: "Global ({{count}})",
+    scopeTabFixed: "Project ({{count}})",
+    scopeTabTemporary: "Temporary ({{count}})",
     filterAll: "All ({{count}})",
     filterCharacter: "Characters ({{count}})",
     filterScene: "Scenes ({{count}})",
@@ -77,7 +77,7 @@ const en = {
     editAsset: "Edit asset",
     editAssetIntro:
       "Update the asset kind, name, notes, or image. Delete asks for confirmation first.",
-    uploadAsset: "Upload asset",
+    uploadAsset: "Upload",
     uploadGlobalAsset: "Upload global asset",
     uploadGlobalAssetIntro:
       "Upload a reusable image, then add its kind, name, and notes.",
